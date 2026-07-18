@@ -1,17 +1,23 @@
 """パス・定数・時刻ユーティリティの一元管理。"""
+import os
 from datetime import datetime
 from pathlib import Path
 
 KIROKU_DIR = Path(__file__).resolve().parent
-PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 # kiroku 自身のセッションディレクトリ名は報告対象から除外
 EXCLUDE_PROJECT_DIRS = {"-Users-munetomoando-claude-work-kiroku"}
 
-ENTRIES_PATH = KIROKU_DIR / "entries.json"
-STATE_PATH = KIROKU_DIR / "state.json"
-HTML_PATH = KIROKU_DIR / "作業報告書.html"
-LOG_PATH = KIROKU_DIR / "kiroku.log"
+_home = os.environ.get("KIROKU_HOME")
+KIROKU_OUT_DIR = Path(_home) if _home else KIROKU_DIR
+
+PROJECTS_DIR = Path(os.environ["KIROKU_PROJECTS_DIR"]) if os.environ.get(
+    "KIROKU_PROJECTS_DIR") else (Path.home() / ".claude" / "projects")
+
+ENTRIES_PATH = KIROKU_OUT_DIR / "entries.json"
+STATE_PATH = KIROKU_OUT_DIR / "state.json"
+HTML_PATH = KIROKU_OUT_DIR / "作業報告書.html"
+LOG_PATH = KIROKU_OUT_DIR / "kiroku.log"
 
 AUTHOR = "安藤至大"
 
