@@ -9,11 +9,11 @@ def test_load_state_missing_returns_none(tmp_path):
     assert gather.load_state(tmp_path / "nope.json") is None
 
 
-def test_compute_window_first_run_is_30_days(tmp_path):
+def test_compute_window_first_run_is_2_days(tmp_path):
     now = datetime(2026, 7, 18, 10, 0, tzinfo=config.LOCAL_TZ)
     since, until = gather.compute_window(None, now)
-    # 30 日前のローカル 0:00
-    assert since.strftime("%Y-%m-%d") == "2026-06-18"
+    # 2 日前のローカル 0:00
+    assert since.strftime("%Y-%m-%d") == "2026-07-16"
     assert since.hour == 0 and since.minute == 0
     assert until == now
 
@@ -56,7 +56,7 @@ def test_build_digest_guard_returns_none(tmp_path):
 
 
 def test_build_digest_happy_path_returns_digest(tmp_path):
-    # state なし → 過去30日が対象。projects に実セッションを1件置く。
+    # state なし → 過去2日が対象。projects に実セッションを1件置く。
     projects = tmp_path / "projects"
     sess = projects / "-Users-munetomoando-claude-work-foo"
     sess.mkdir(parents=True)

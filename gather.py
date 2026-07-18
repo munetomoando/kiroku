@@ -148,11 +148,16 @@ def load_state(path: Path) -> dict | None:
         return None
 
 
+# 初回実行（state なし）でさかのぼる日数。日ごとに claude を呼ぶため、
+# 大きすぎると初回の呼び出し回数・所要時間が増える。
+FIRST_RUN_DAYS = 2
+
+
 def compute_window(state: dict | None, now: datetime) -> tuple[datetime, datetime]:
     if state and state.get("last_recorded_ts"):
         since = config.parse_ts(state["last_recorded_ts"])
     else:
-        local_midnight = (now.astimezone(config.LOCAL_TZ) - timedelta(days=30)) \
+        local_midnight = (now.astimezone(config.LOCAL_TZ) - timedelta(days=FIRST_RUN_DAYS)) \
             .replace(hour=0, minute=0, second=0, microsecond=0)
         since = local_midnight
     return since, now

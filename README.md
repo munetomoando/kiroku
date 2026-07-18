@@ -21,7 +21,7 @@ sleepwatcher（wake）→ `wakeup.sh` → `run-kiroku.sh`：
 
     cd /Users/munetomoando/claude-work/kiroku && bash run-kiroku.sh
 
-初回は state.json が無いため、過去 30 日分を日ごとにバックフィルします。
+初回は state.json が無いため、過去 2 日分を日ごとにバックフィルします。
 
 ## sleepwatcher 設定
 
@@ -50,7 +50,7 @@ sleepwatcher はスリープ復帰時に `~/.wakeup` を実行します。`wakeu
 ## リセット（最初から作り直す）
 
     rm -f state.json entries.json 作業報告書.html
-    bash run-kiroku.sh   # 再び過去 30 日をバックフィル
+    bash run-kiroku.sh   # 再び過去 2 日をバックフィル
 
 ## トラブルシュート
 
