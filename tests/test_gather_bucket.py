@@ -44,3 +44,17 @@ def test_bucket_respects_since_until_window():
     all_prompts = [p for d in out["days"] for pr in d["projects"] for p in pr["prompts"]]
     assert "古い" not in all_prompts
     assert "対象内" in all_prompts
+
+
+def test_bucket_skips_malformed_records_without_raising():
+    records = [
+        1, 2, 3,
+        {"type": "user", "timestamp": 12345, "cwd": "/x/foo",
+         "isSidechain": False, "message": {"role": "user", "content": "bad ts"}},
+        rec("2026-07-17T01:00:00.000Z", "user", "有効"),
+    ]
+    since = datetime(2026, 7, 1, tzinfo=UTC)
+    until = datetime(2026, 7, 30, tzinfo=UTC)
+    out = gather.bucket_activity(records, since, until)
+    all_prompts = [p for d in out["days"] for pr in d["projects"] for p in pr["prompts"]]
+    assert "有効" in all_prompts

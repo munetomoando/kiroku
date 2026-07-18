@@ -37,8 +37,8 @@ def merge_entries(existing: dict, digest: dict, summary: dict) -> dict:
             s = summary.get(date, {}).get(proj, {})
             projects.append({
                 "project": proj,
-                "summary": s.get("summary", ""),
-                "bullets": s.get("bullets", []),
+                "summary": s.get("summary") or "",
+                "bullets": [str(b) for b in (s.get("bullets") or []) if b is not None],
                 "stats": pr["stats"],
             })
         by_date[date] = {"date": date, "projects": projects}
@@ -99,7 +99,8 @@ def render_html(entries: dict) -> str:
         for pr in e["projects"]:
             st = pr["stats"]
             bullets = "\n".join(
-                f"          <li>{escape(b)}</li>" for b in pr.get("bullets", [])
+                f"          <li>{escape(str(b))}</li>" for b in pr.get("bullets", [])
+                if b is not None
             )
             bullets_block = f"        <ul class=\"topics\">\n{bullets}\n        </ul>" if bullets else ""
             stat_line = (
@@ -109,7 +110,7 @@ def render_html(entries: dict) -> str:
             proj_html.append(
                 f'      <div class="project">\n'
                 f'        <h3>{escape(pr["project"])}</h3>\n'
-                f'        <p class="summary">{escape(pr.get("summary", ""))}</p>\n'
+                f'        <p class="summary">{escape(str(pr.get("summary") or ""))}</p>\n'
                 f'{bullets_block}\n'
                 f'        <p class="stats">{escape(stat_line)}</p>\n'
                 f'      </div>'
@@ -177,9 +178,10 @@ def write_report(digest: dict, summary: dict, *, entries_path: Path,
         summary = prompt.fallback_summary(digest)
     existing = load_entries(entries_path)
     merged = merge_entries(existing, digest, summary)
+    html = render_html(merged)
     atomic_write_json(entries_path, merged)
     tmp_html = html_path.with_suffix(".html.tmp")
-    tmp_html.write_text(render_html(merged), encoding="utf-8")
+    tmp_html.write_text(html, encoding="utf-8")
     os.replace(tmp_html, html_path)
     until_ts = digest.get("until_ts", "")
     today = until_ts[:10] if until_ts else ""

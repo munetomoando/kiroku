@@ -55,3 +55,13 @@ def test_render_html_escapes_html():
     html = render.render_html(entries)
     assert "<script>bad" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_render_html_handles_null_summary_and_bullets():
+    entries = {"entries": [{"date": "2026-07-18", "projects": [
+        {"project": "x", "summary": None, "bullets": [None, "ok"],
+         "stats": {"first_ts": "2026-07-18T09:00:00+09:00",
+                   "last_ts": "2026-07-18T09:00:00+09:00",
+                   "user_turns": 1, "assistant_turns": 1}}]}]}
+    html = render.render_html(entries)
+    assert "ok" in html

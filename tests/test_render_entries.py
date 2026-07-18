@@ -35,6 +35,14 @@ def test_merge_replaces_same_date():
     assert same[0]["projects"][0]["project"] == "companion"
 
 
+def test_merge_sanitizes_null_summary_and_bullets():
+    summary = {"2026-07-17": {"companion": {"summary": None, "bullets": None}}}
+    out = render.merge_entries({"entries": []}, DIGEST, summary)
+    pr = out["entries"][0]["projects"][0]
+    assert pr["summary"] == ""
+    assert pr["bullets"] == []
+
+
 def test_update_state_writes_date_and_ts(tmp_path):
     p = tmp_path / "state.json"
     render.update_state(p, "2026-07-18T10:00:00+09:00", "2026-07-18")

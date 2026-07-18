@@ -42,7 +42,7 @@ def user_prompt_text(rec: dict) -> str | None:
         return None
     if rec.get("isSidechain"):
         return None
-    content = rec.get("message", {}).get("content")
+    content = (rec.get("message") or {}).get("content")
     if isinstance(content, str):
         text = content.strip()
         return text or None
@@ -59,7 +59,7 @@ def assistant_texts(rec: dict) -> list[str]:
     """assistant message の text ブロックのみ抽出。"""
     if rec.get("type") != "assistant":
         return []
-    content = rec.get("message", {}).get("content")
+    content = (rec.get("message") or {}).get("content")
     if not isinstance(content, list):
         return []
     out = []
@@ -79,7 +79,11 @@ def bucket_activity(records: Iterable[dict], since: datetime,
     order: dict[str, list[str]] = {}  # date -> project 初出順
 
     for r in records:
+        if not isinstance(r, dict):
+            continue
         ts_raw = r.get("timestamp")
+        if not isinstance(ts_raw, str):
+            continue
         if not ts_raw:
             continue
         try:

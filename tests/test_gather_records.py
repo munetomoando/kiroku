@@ -31,6 +31,16 @@ def test_assistant_texts_extracts_text_blocks_only():
     assert gather.assistant_texts(recs[4]) == []  # tool_use のみ
 
 
+def test_user_prompt_text_handles_null_message():
+    rec = {"type": "user", "isSidechain": False, "message": None}
+    assert gather.user_prompt_text(rec) is None
+
+
+def test_assistant_texts_handles_null_message():
+    rec = {"type": "assistant", "message": None}
+    assert gather.assistant_texts(rec) == []
+
+
 def test_iter_records_skips_invalid_utf8_line(tmp_path):
     p = tmp_path / "bad_encoding.jsonl"
     valid_record = {"type": "user", "cwd": "/x/companion", "message": {"content": "ok"}}
