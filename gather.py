@@ -1,6 +1,6 @@
 """jsonl 走査・抽出・日付×プロジェクト束ね・ダイジェスト生成。"""
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -135,3 +135,64 @@ def bucket_activity(records: Iterable[dict], since: datetime,
             })
         out_days.append({"date": date, "projects": projects})
     return {"days": out_days}
+
+
+def load_state(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def compute_window(state: dict | None, now: datetime) -> tuple[datetime, datetime]:
+    if state and state.get("last_recorded_ts"):
+        since = config.parse_ts(state["last_recorded_ts"])
+    else:
+        local_midnight = (now.astimezone(config.LOCAL_TZ) - timedelta(days=30)) \
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+        since = local_midnight
+    return since, now
+
+
+def already_recorded_today(state: dict | None, now: datetime) -> bool:
+    if not state:
+        return False
+    return state.get("last_recorded_date") == config.local_date(now)
+
+
+def session_files(projects_dir: Path, exclude: set[str]) -> list[Path]:
+    files: list[Path] = []
+    if not projects_dir.exists():
+        return files
+    for child in projects_dir.iterdir():
+        if not child.is_dir() or child.name in exclude:
+            continue
+        files.extend(sorted(child.glob("*.jsonl")))
+    return files
+
+
+def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
+                 projects_dir: Path = config.PROJECTS_DIR) -> dict | None:
+    state = load_state(state_path)
+    if already_recorded_today(state, now):
+        return None
+    since, until = compute_window(state, now)
+    files = session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS)
+    digest = bucket_activity(iter_records(files), since, until)
+    digest["until_ts"] = until.astimezone(config.LOCAL_TZ).isoformat()
+    return digest
+
+
+def main() -> int:
+    """ダイジェストを stdout に JSON 出力。記録不要なら空 days で終了コード 0。"""
+    now = datetime.now(config.LOCAL_TZ)
+    digest = build_digest(now)
+    if digest is None:
+        print(json.dumps({"days": [], "skipped": True}))
+        return 0
+    print(json.dumps(digest, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
