@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+kiroku.log
+.kiroku.lock/
+.superpowers/
+*.tmp
+entries.json
+state.json
+.venv/
