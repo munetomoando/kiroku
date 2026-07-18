@@ -31,14 +31,13 @@ else
   exit 0
 fi
 
-# 2) 要約プロンプト生成 → claude -p → パース
-PROMPT="$(echo "$DIGEST" | "$PY" -c "import sys,json;from kiroku import prompt;print(prompt.build_prompt(json.load(sys.stdin)))")"
-if RESPONSE="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p 2>>"$LOG")"; then
-  SUMMARY="$(printf '%s' "$RESPONSE" | "$PY" -c "import sys,json;from kiroku import prompt;print(json.dumps(prompt.parse_summary(sys.stdin.read()),ensure_ascii=False))")"
-  log "要約生成 成功"
-else
+# 2) 日ごとに要約（summarize が claude を日単位で呼ぶ。stderr はログへ）
+SUMMARY="$(printf '%s' "$DIGEST" | KIROKU_CLAUDE_BIN="$CLAUDE_BIN" "$PY" -m kiroku.summarize 2>>"$LOG")"
+if [ -z "$SUMMARY" ]; then
   SUMMARY="{}"
-  log "要約生成 失敗 → フォールバック使用"
+  log "要約が空 → フォールバック使用"
+else
+  log "要約生成 完了"
 fi
 
 # 3) レンダリング（digest + summary を stdin で渡す）
