@@ -43,6 +43,41 @@ def test_merge_sanitizes_null_summary_and_bullets():
     assert pr["bullets"] == []
 
 
+FOO_DIGEST = {"until_ts": "2026-07-18T10:00:00+09:00", "days": [
+    {"date": "2026-07-17", "projects": [
+        {"project": "foo", "prompts": ["やったこと1", "やったこと2"], "highlights": [],
+         "stats": {"first_ts": "2026-07-17T09:00:00+09:00",
+                   "last_ts": "2026-07-17T18:00:00+09:00",
+                   "user_turns": 1, "assistant_turns": 2}}]}]}
+
+
+def test_merge_falls_back_to_prompts_when_project_missing_from_summary():
+    out = render.merge_entries({"entries": []}, FOO_DIGEST, {})
+    pr = out["entries"][0]["projects"][0]
+    assert pr["project"] == "foo"
+    assert pr["bullets"] == ["やったこと1", "やったこと2"]
+    assert pr["summary"] != ""
+
+
+def test_merge_falls_back_to_placeholder_when_prompts_empty():
+    digest = {"until_ts": "2026-07-18T10:00:00+09:00", "days": [
+        {"date": "2026-07-17", "projects": [
+            {"project": "foo", "prompts": [], "highlights": [],
+             "stats": {"first_ts": "2026-07-17T09:00:00+09:00",
+                       "last_ts": "2026-07-17T18:00:00+09:00",
+                       "user_turns": 1, "assistant_turns": 2}}]}]}
+    out = render.merge_entries({"entries": []}, digest, {})
+    pr = out["entries"][0]["projects"][0]
+    assert pr["bullets"] == ["（記録された指示なし）"]
+
+
+def test_merge_keeps_real_summary_unchanged():
+    out = render.merge_entries({"entries": []}, DIGEST, SUMMARY)
+    pr = out["entries"][0]["projects"][0]
+    assert pr["summary"] == "要約文"
+    assert pr["bullets"] == ["トピック1"]
+
+
 def test_update_state_writes_date_and_ts(tmp_path):
     p = tmp_path / "state.json"
     render.update_state(p, "2026-07-18T10:00:00+09:00", "2026-07-18")

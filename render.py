@@ -34,11 +34,20 @@ def merge_entries(existing: dict, digest: dict, summary: dict) -> dict:
         projects = []
         for pr in day["projects"]:
             proj = pr["project"]
-            s = summary.get(date, {}).get(proj, {})
+            s = summary.get(date, {}).get(proj)
+            if s is None:
+                # モデル応答がこのプロジェクトを丸ごと省略した場合: digest の
+                # prompts から最小限のフォールバックを組み立てる。
+                entry_bullets = [str(p) for p in (pr.get("prompts") or [])] \
+                    or ["（記録された指示なし）"]
+                entry_summary = f"{proj} で作業を行いました（自動要約なし）。"
+            else:
+                entry_summary = s.get("summary") or ""
+                entry_bullets = [str(b) for b in (s.get("bullets") or []) if b is not None]
             projects.append({
                 "project": proj,
-                "summary": s.get("summary") or "",
-                "bullets": [str(b) for b in (s.get("bullets") or []) if b is not None],
+                "summary": entry_summary,
+                "bullets": entry_bullets,
                 "stats": pr["stats"],
             })
         by_date[date] = {"date": date, "projects": projects}
