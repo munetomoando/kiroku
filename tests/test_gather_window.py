@@ -53,3 +53,25 @@ def test_build_digest_guard_returns_none(tmp_path):
     now = datetime(2026, 7, 18, 10, 0, tzinfo=config.LOCAL_TZ)
     assert gather.build_digest(now, state_path=state_path,
                                projects_dir=tmp_path) is None
+
+
+def test_build_digest_happy_path_returns_digest(tmp_path):
+    # state なし → 過去30日が対象。projects に実セッションを1件置く。
+    projects = tmp_path / "projects"
+    sess = projects / "-Users-munetomoando-claude-work-foo"
+    sess.mkdir(parents=True)
+    now = datetime(2026, 7, 18, 10, 0, tzinfo=config.LOCAL_TZ)
+    recent = (now - timedelta(days=1)).astimezone(timezone.utc)
+    ts = recent.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    (sess / "s.jsonl").write_text(
+        json.dumps({
+            "type": "user", "timestamp": ts,
+            "cwd": "/Users/munetomoando/claude-work/foo",
+            "isSidechain": False,
+            "message": {"role": "user", "content": "テスト指示"}}) + "\n",
+        encoding="utf-8")
+    state_path = tmp_path / "state.json"  # 存在しない
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+    assert digest is not None
+    assert "until_ts" in digest
+    assert any(d["projects"] for d in digest["days"])
