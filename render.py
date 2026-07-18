@@ -1,11 +1,13 @@
 """entries.json 追記と HTML 全再生成、state 更新。"""
 import json
 import os
+import sys
 from datetime import datetime
 from html import escape
 from pathlib import Path
 
 from kiroku import config
+from kiroku import prompt
 
 
 def load_entries(path: Path) -> dict:
@@ -167,3 +169,34 @@ footer {{ text-align:center; color:var(--sub); font-size:.8rem; padding:2rem 1re
 </body>
 </html>
 """
+
+
+def write_report(digest: dict, summary: dict, *, entries_path: Path,
+                 html_path: Path, state_path: Path) -> None:
+    if not summary:
+        summary = prompt.fallback_summary(digest)
+    existing = load_entries(entries_path)
+    merged = merge_entries(existing, digest, summary)
+    atomic_write_json(entries_path, merged)
+    tmp_html = html_path.with_suffix(".html.tmp")
+    tmp_html.write_text(render_html(merged), encoding="utf-8")
+    os.replace(tmp_html, html_path)
+    until_ts = digest.get("until_ts", "")
+    today = until_ts[:10] if until_ts else ""
+    update_state(state_path, until_ts, today)
+
+
+def main() -> int:
+    """stdin から {"digest":..., "summary":...} を読み、報告書を書き出す。"""
+    payload = json.loads(sys.stdin.read())
+    digest = payload.get("digest", {"days": []})
+    summary = payload.get("summary", {})
+    if not digest.get("days"):
+        return 0
+    write_report(digest, summary, entries_path=config.ENTRIES_PATH,
+                 html_path=config.HTML_PATH, state_path=config.STATE_PATH)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
