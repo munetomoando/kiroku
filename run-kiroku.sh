@@ -43,4 +43,16 @@ fi
 # 3) レンダリング（digest + summary を stdin で渡す）
 printf '{"digest":%s,"summary":%s}' "$DIGEST" "$SUMMARY" | "$PY" -m kiroku.render
 log "レンダリング完了 → 作業報告書.html 更新"
+
+# 4) 更新された報告書を画面に表示（KIROKU_OPEN=0 で無効化）。
+#    ここに到達するのは新しい記録が追記された時だけなので「更新時のみ表示」になる。
+OUT_DIR="${KIROKU_HOME:-$KIROKU_DIR}"
+HTML="$OUT_DIR/作業報告書.html"
+if [ "${KIROKU_OPEN:-1}" = "1" ] && command -v open >/dev/null 2>&1; then
+  if open "$HTML" 2>>"$LOG"; then
+    log "報告書を画面に表示"
+  else
+    log "報告書の表示に失敗"
+  fi
+fi
 log "=== 実行終了 ==="

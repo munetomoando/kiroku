@@ -32,6 +32,7 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     # gather/render が参照するパスを環境変数で上書きできるようにしてある前提
     env["KIROKU_PROJECTS_DIR"] = str(projects)
     env["KIROKU_HOME"] = str(tmp_path)  # entries/state/html をここへ
+    env["KIROKU_OPEN"] = "0"  # テスト中はブラウザを開かない
 
     _chmod_x(KIROKU / "run-kiroku.sh")
     _chmod_x(KIROKU / "tests" / "fake_claude.sh")
