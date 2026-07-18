@@ -8,7 +8,7 @@ def iter_records(paths: list[Path]) -> Iterator[dict]:
     """複数の jsonl を 1 行ずつ parse。壊れた行はスキップ。"""
     for p in paths:
         try:
-            fh = p.open(encoding="utf-8")
+            fh = p.open(encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:

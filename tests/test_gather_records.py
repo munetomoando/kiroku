@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from kiroku import gather
 
@@ -28,3 +29,16 @@ def test_assistant_texts_extracts_text_blocks_only():
     recs = list(gather.iter_records([FIX]))
     assert gather.assistant_texts(recs[1]) == ["ログイン画面を実装しました。"]
     assert gather.assistant_texts(recs[4]) == []  # tool_use のみ
+
+
+def test_iter_records_skips_invalid_utf8_line(tmp_path):
+    p = tmp_path / "bad_encoding.jsonl"
+    valid_record = {"type": "user", "cwd": "/x/companion", "message": {"content": "ok"}}
+    with p.open("wb") as fh:
+        fh.write(b"\xff\xfe not utf8\n")
+        fh.write(json.dumps(valid_record, ensure_ascii=False).encode("utf-8") + b"\n")
+
+    recs = list(gather.iter_records([p]))
+
+    assert len(recs) == 1
+    assert recs[0] == valid_record
