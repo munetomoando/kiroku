@@ -10,7 +10,18 @@ KIROKU_DIR = Path(__file__).resolve().parent
 # kiroku 本体の開発記録は報告対象に含めつつ、ツール自身の要約呼び出しは
 # レポートに載らないようにする（自己言及ループとノイズの回避）。
 SUMMARIZER_CWD = KIROKU_DIR / ".summarizer"
-SUMMARIZER_PROJECT_DIR = "-Users-munetomoando-claude-work-kiroku--summarizer"
+
+
+def encode_project_dir(path) -> str:
+    """絶対パスを Claude Code の ~/.claude/projects/ 内ディレクトリ名へ符号化する。
+    Claude Code は cwd の絶対パスの `/` と `.` をすべて `-` に置換した名前で
+    セッションログを保存する。どのユーザー名・配置先でも正しく除外できるよう、
+    ハードコードせず実際のパスから計算する。"""
+    return str(path).replace("/", "-").replace(".", "-")
+
+
+# 要約用 cwd に対応する projects ディレクトリ名（環境に依らず自動計算）。
+SUMMARIZER_PROJECT_DIR = encode_project_dir(SUMMARIZER_CWD)
 EXCLUDE_PROJECT_DIRS = {SUMMARIZER_PROJECT_DIR}
 
 _home = os.environ.get("KIROKU_HOME")
@@ -23,8 +34,6 @@ ENTRIES_PATH = KIROKU_OUT_DIR / "entries.json"
 STATE_PATH = KIROKU_OUT_DIR / "state.json"
 HTML_PATH = KIROKU_OUT_DIR / "作業報告書.html"
 LOG_PATH = KIROKU_OUT_DIR / "kiroku.log"
-
-AUTHOR = "安藤至大"
 
 # システムのローカルタイムゾーン（JST 前提）
 LOCAL_TZ = datetime.now().astimezone().tzinfo

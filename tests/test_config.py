@@ -9,10 +9,20 @@ def test_paths_under_kiroku_dir():
     assert config.HTML_PATH == config.KIROKU_DIR / "作業報告書.html"
 
 
+def test_encode_project_dir_replaces_slash_and_dot():
+    # Claude Code は cwd の絶対パスの `/` と `.` を `-` に置換した名前で保存する。
+    enc = config.encode_project_dir("/Users/foo/claude-work/kiroku/.summarizer")
+    assert enc == "-Users-foo-claude-work-kiroku--summarizer"
+
+
 def test_kiroku_included_but_summarizer_excluded():
     # kiroku 本体の開発記録は含める。除外するのは要約用の専用プロジェクトだけ。
-    assert "-Users-munetomoando-claude-work-kiroku" not in config.EXCLUDE_PROJECT_DIRS
+    # ユーザー名・配置先に依らず、実際のパスから符号化した名前で判定する。
+    kiroku_dir_enc = config.encode_project_dir(config.KIROKU_DIR)
+    assert kiroku_dir_enc not in config.EXCLUDE_PROJECT_DIRS
     assert config.SUMMARIZER_PROJECT_DIR in config.EXCLUDE_PROJECT_DIRS
+    assert config.SUMMARIZER_PROJECT_DIR == config.encode_project_dir(
+        config.KIROKU_DIR / ".summarizer")
     assert config.SUMMARIZER_CWD == config.KIROKU_DIR / ".summarizer"
 
 

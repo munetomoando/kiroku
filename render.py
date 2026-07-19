@@ -210,7 +210,7 @@ footer {{ text-align:center; color:var(--sub); font-size:.8rem; padding:2rem 1re
 <main>
 {body}
 </main>
-<footer>著者: {escape(config.AUTHOR)}</footer>
+<footer>kiroku — Claude Code 作業報告書</footer>
 <script>
 function kirokuOpenTarget() {{
   var h = location.hash.replace('#', '');

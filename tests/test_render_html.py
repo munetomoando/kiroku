@@ -43,7 +43,9 @@ def test_render_html_has_project_headings_and_stats():
     assert "companion" in html
     assert "要約B" in html
     assert "b1" in html and "b2" in html
-    assert "安藤至大" in html
+    # 配布版では個人名を出さず、中立なフッターを表示する。
+    assert "kiroku — Claude Code 作業報告書" in html
+    assert "安藤至大" not in html
 
 
 def test_render_html_escapes_html():

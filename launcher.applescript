@@ -1,8 +1,8 @@
 -- kiroku ランチャー。ダブルクリックで run-kiroku.sh を実行する。
--- ~/Desktop/kiroku.app へのビルド方法（README 参照）:
---   osacompile -o ~/Desktop/kiroku.app /Users/munetomoando/claude-work/kiroku/launcher.applescript
+-- これはテンプレート。install.sh が __KIROKU_DIR__ を実際の配置パスに
+-- 置換してから osacompile でアプリを生成する（手動ビルドは README 参照）。
 on run
-	set kirokuDir to "/Users/munetomoando/claude-work/kiroku"
+	set kirokuDir to "__KIROKU_DIR__"
 	set runScript to kirokuDir & "/run-kiroku.sh"
 	set reportPath to kirokuDir & "/作業報告書.html"
 	try
