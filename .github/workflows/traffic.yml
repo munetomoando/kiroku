@@ -1,0 +1,100 @@
+name: Traffic snapshot
+
+# GitHub の Traffic API は直近 14 日分しか返さない。毎日スナップショットを取り、
+# 専用ブランチ traffic-data の CSV に日付キーで累積保存する（main は汚さない）。
+# 必要な設定: リポジトリ Secret「TRAFFIC_TOKEN」（PAT）。詳細は README のトラフィック節。
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 毎日 03:17 UTC（= 12:17 JST）
+  workflow_dispatch:        # 手動実行も可
+
+permissions:
+  contents: read            # 実処理は TRAFFIC_TOKEN で行うため最小権限
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Snapshot traffic to traffic-data branch
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Secret TRAFFIC_TOKEN が未設定です。README のトラフィック節に従い PAT を追加してください。"
+            exit 1
+          fi
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git clone --quiet "$REMOTE" data
+          cd data
+          git config user.name  "kiroku-traffic-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # 既存の traffic-data を使う。無ければ空の orphan ブランチを作る（初回）。
+          git checkout traffic-data 2>/dev/null || { git checkout --orphan traffic-data; git rm -rf . >/dev/null 2>&1 || true; }
+
+          python3 - <<'PY'
+          import csv, json, os, urllib.request
+          from datetime import datetime, timezone
+
+          repo = os.environ["REPO"]; tok = os.environ["GH_TOKEN"]
+
+          def api(path):
+              url = f"https://api.github.com/repos/{repo}"
+              if path: url += f"/{path}"
+              req = urllib.request.Request(url, headers={
+                  "Authorization": f"Bearer {tok}",
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "kiroku-traffic"})
+              with urllib.request.urlopen(req) as r:
+                  return json.load(r)
+
+          def merge_daily(fname, arr, cols):
+              rows = {}
+              if os.path.exists(fname):
+                  with open(fname, newline="") as f:
+                      for d in csv.DictReader(f):
+                          rows[d["date"]] = (d[cols[1]], d[cols[2]])
+              for e in arr:                      # API は該当日の権威値。上書き upsert。
+                  rows[e["timestamp"][:10]] = (e["count"], e["uniques"])
+              with open(fname, "w", newline="") as f:
+                  w = csv.writer(f); w.writerow(cols)
+                  for date in sorted(rows): w.writerow([date, *rows[date]])
+
+          clones = api("traffic/clones")
+          merge_daily("clones.csv", clones.get("clones", []), ["date","clones","unique_cloners"])
+          views = api("traffic/views")
+          merge_daily("views.csv", views.get("views", []), ["date","views","unique_visitors"])
+
+          info = api("")
+          today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+          srows = {}
+          if os.path.exists("stars.csv"):
+              with open("stars.csv", newline="") as f:
+                  for d in csv.DictReader(f): srows[d["date"]] = d["stars"]
+          srows[today] = info["stargazers_count"]
+          with open("stars.csv", "w", newline="") as f:
+              w = csv.writer(f); w.writerow(["date","stars"])
+              for date in sorted(srows): w.writerow([date, srows[date]])
+
+          print(f"clones(14d)={clones.get('count')} views(14d)={views.get('count')} stars={info['stargazers_count']}")
+          PY
+
+          cat > README.md <<'MD'
+          # kiroku トラフィック記録（自動生成）
+
+          このブランチは GitHub Actions（`.github/workflows/traffic.yml`）が毎日更新する
+          データ専用ブランチです。手動で編集しないでください。
+
+          - `clones.csv` … 日次クローン数（`date,clones,unique_cloners`）
+          - `views.csv`  … 日次閲覧数（`date,views,unique_visitors`）
+          - `stars.csv`  … スター数の推移（`date,stars`）
+
+          GitHub の Traffic API は直近 14 日分しか返さないため、毎日スナップショットを
+          取り、日付キーで累積しています。
+          MD
+
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: traffic snapshot"
+          git push origin traffic-data

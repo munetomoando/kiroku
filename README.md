@@ -139,6 +139,27 @@ python3 -m venv .venv
 
 （実行時は標準ライブラリのみで動くため、利用だけなら venv は不要です。）
 
+## メンテナ向け: トラフィック記録（任意）
+
+GitHub の Traffic API は直近 14 日分しか返さないため、長期のクローン数・閲覧数・
+スター推移を残すには毎日のスナップショットが必要です。`.github/workflows/traffic.yml`
+がそれを行い、結果を専用ブランチ `traffic-data` の CSV に累積します（`main` は汚しません）。
+
+有効化の手順（リポジトリ所有者のみ）:
+
+1. **PAT を作成**: GitHub → Settings → Developer settings →
+   Fine-grained personal access tokens →「Generate new token」。
+   - Repository access: このリポジトリ（`kiroku`）のみ
+   - Permissions: **Contents = Read and write**、**Administration = Read-only**
+     （Administration:Read が Traffic API に必要）
+2. **Secret を登録**: リポジトリ → Settings → Secrets and variables → Actions →
+   「New repository secret」。Name = `TRAFFIC_TOKEN`、Value = 上記トークン。
+3. あとは毎日 03:17 UTC に自動実行されます。すぐ試すには Actions タブから
+   「Traffic snapshot」→「Run workflow」で手動実行できます。
+
+記録は `traffic-data` ブランチの `clones.csv` / `views.csv` / `stars.csv` に貯まります。
+（設定しなくても kiroku 本体の動作には一切影響しません。）
+
 ## ライセンス
 
 MIT License（[LICENSE](LICENSE) を参照）。
