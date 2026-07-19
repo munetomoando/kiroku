@@ -31,9 +31,19 @@ sleepwatcher（wake）→ `wakeup.sh` → `run-kiroku.sh`：
 
     osacompile -o ~/Desktop/kiroku.app /Users/munetomoando/claude-work/kiroku/launcher.applescript
 
-`~/Desktop/kiroku.app` をダブルクリックすると `run-kiroku.sh` が走り、新しい作業が
-あれば報告書を更新して Safari で表示します（無ければ何もしません）。Dock にドラッグ
-すれば、いつでも1クリックで振り返れます。ソースは `launcher.applescript`。
+`kiroku.app` をダブルクリック（または Dock のアイコンをクリック）すると `run-kiroku.sh`
+が走ります。新しい作業があれば報告書を更新し、**更新の有無に関わらず必ず Safari で
+報告書を開きます**（手動クリックは「今の報告書を見る」操作なので常に表示）。Dock に
+ドラッグすれば、いつでも1クリックで振り返れます。ソースは `launcher.applescript`。
+
+（自動のスリープ復帰時は、従来どおり「新しい作業があった時だけ」報告書を開きます。
+アプリだけが KIROKU_OPEN=0 で本体を実行し、最後に自分で必ず開く仕組みです。）
+
+アプリ内スクリプトだけ差し替えたい場合（アイコンを保持したまま）:
+
+    osacompile -o /tmp/m.scpt launcher.applescript
+    cp /tmp/m.scpt /Applications/kiroku.app/Contents/Resources/Scripts/main.scpt
+    codesign --force --deep -s - /Applications/kiroku.app
 
 （メニューバー常駐にしたい場合は SwiftBar / xbar などの別アプリが必要です。）
 
