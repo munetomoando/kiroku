@@ -25,6 +25,18 @@ sleepwatcher（wake）→ `wakeup.sh` → `run-kiroku.sh`：
 
 初回は state.json が無いため、過去 2 日分を日ごとにバックフィルします。
 
+## デスクトップ / Dock から起動（ボタン）
+
+ターミナルを開かずにクリックで実行できるアプリを作れます。
+
+    osacompile -o ~/Desktop/kiroku.app /Users/munetomoando/claude-work/kiroku/launcher.applescript
+
+`~/Desktop/kiroku.app` をダブルクリックすると `run-kiroku.sh` が走り、新しい作業が
+あれば報告書を更新して Safari で表示します（無ければ何もしません）。Dock にドラッグ
+すれば、いつでも1クリックで振り返れます。ソースは `launcher.applescript`。
+
+（メニューバー常駐にしたい場合は SwiftBar / xbar などの別アプリが必要です。）
+
 ## sleepwatcher 設定
 
     brew install sleepwatcher
