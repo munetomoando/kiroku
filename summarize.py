@@ -4,14 +4,18 @@ import os
 import subprocess
 import sys
 
-from kiroku import prompt
+from kiroku import config, prompt
 
 
 def _default_runner(claude_bin: str, prompt_text: str) -> str | None:
-    """claude -p を呼び、stdout を返す。失敗（非0終了・起動不可）なら None。"""
+    """claude -p を専用 cwd で呼び、stdout を返す。失敗なら None。
+    専用 cwd（config.SUMMARIZER_CWD）で実行することで、この要約呼び出し自体が
+    ~/.claude/projects の専用プロジェクトに記録され、kiroku 本体の記録を汚さない。"""
     try:
+        config.SUMMARIZER_CWD.mkdir(parents=True, exist_ok=True)
         result = subprocess.run([claude_bin, "-p"], input=prompt_text,
-                                capture_output=True, text=True)
+                                capture_output=True, text=True,
+                                cwd=str(config.SUMMARIZER_CWD))
     except OSError:
         return None
     if result.returncode != 0:

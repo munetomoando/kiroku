@@ -5,8 +5,13 @@ from pathlib import Path
 
 KIROKU_DIR = Path(__file__).resolve().parent
 
-# kiroku 自身のセッションディレクトリ名は報告対象から除外
-EXCLUDE_PROJECT_DIRS = {"-Users-munetomoando-claude-work-kiroku"}
+# 要約用の claude -p はこの専用ディレクトリを cwd にして実行する。
+# その結果 ~/.claude/projects/ に作られる専用プロジェクトだけを除外することで、
+# kiroku 本体の開発記録は報告対象に含めつつ、ツール自身の要約呼び出しは
+# レポートに載らないようにする（自己言及ループとノイズの回避）。
+SUMMARIZER_CWD = KIROKU_DIR / ".summarizer"
+SUMMARIZER_PROJECT_DIR = "-Users-munetomoando-claude-work-kiroku--summarizer"
+EXCLUDE_PROJECT_DIRS = {SUMMARIZER_PROJECT_DIR}
 
 _home = os.environ.get("KIROKU_HOME")
 KIROKU_OUT_DIR = Path(_home) if _home else KIROKU_DIR

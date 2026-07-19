@@ -38,15 +38,57 @@ def test_already_recorded_today():
     assert gather.already_recorded_today(None, now) is False
 
 
-def test_session_files_excludes_kiroku(tmp_path):
+def test_session_files_excludes_given_dirs(tmp_path):
+    # 除外集合に入れたディレクトリだけが除外され、kiroku 本体は含まれる。
+    excl = config.SUMMARIZER_PROJECT_DIR
+    (tmp_path / excl).mkdir()
+    (tmp_path / excl / "a.jsonl").write_text("{}")
     (tmp_path / "-Users-munetomoando-claude-work-kiroku").mkdir()
-    (tmp_path / "-Users-munetomoando-claude-work-kiroku" / "a.jsonl").write_text("{}")
-    (tmp_path / "-Users-munetomoando-claude-work-foo").mkdir()
-    good = tmp_path / "-Users-munetomoando-claude-work-foo" / "b.jsonl"
-    good.write_text("{}")
+    kiroku_f = tmp_path / "-Users-munetomoando-claude-work-kiroku" / "k.jsonl"
+    kiroku_f.write_text("{}")
     files = gather.session_files(tmp_path, config.EXCLUDE_PROJECT_DIRS)
-    assert good in files
-    assert all("kiroku" not in str(f) for f in files)
+    assert kiroku_f in files                       # kiroku 本体は含まれる
+    assert all("summarizer" not in str(f) for f in files)  # 要約用は除外
+
+
+def test_is_summarizer_session(tmp_path):
+    # 最初のユーザープロンプトが要約プロンプトのセッションは True。
+    summ = tmp_path / "summ.jsonl"
+    summ.write_text(json.dumps({
+        "type": "user", "timestamp": "2026-07-19T01:00:00.000Z",
+        "cwd": "/x", "isSidechain": False,
+        "message": {"role": "user",
+                    "content": "あなたは作業報告書の編集者です。以下は…"}}) + "\n",
+        encoding="utf-8")
+    assert gather.is_summarizer_session(summ) is True
+
+    dev = tmp_path / "dev.jsonl"
+    dev.write_text(json.dumps({
+        "type": "user", "timestamp": "2026-07-19T01:00:00.000Z",
+        "cwd": "/x", "isSidechain": False,
+        "message": {"role": "user", "content": "mdファイルを読んで整理して"}}) + "\n",
+        encoding="utf-8")
+    assert gather.is_summarizer_session(dev) is False
+
+
+def test_build_digest_skips_summarizer_sessions(tmp_path):
+    # 要約プロンプトだけのセッションは、対象期間内でも記録に含めない。
+    jst = config.LOCAL_TZ
+    projects = tmp_path / "projects"
+    sess = projects / "-Users-munetomoando-claude-work-kiroku"
+    sess.mkdir(parents=True)
+    ts = datetime(2026, 7, 18, 10, 0, tzinfo=jst).astimezone(UTC) \
+        .strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    (sess / "summarizer.jsonl").write_text(json.dumps({
+        "type": "user", "timestamp": ts, "cwd": str(sess),
+        "isSidechain": False,
+        "message": {"role": "user",
+                    "content": "あなたは作業報告書の編集者です。要約して"}}) + "\n",
+        encoding="utf-8")
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+    # state なし → 初回。要約セッションしか無いので対象作業ゼロ → None。
+    assert gather.build_digest(now, state_path=tmp_path / "state.json",
+                               projects_dir=projects) is None
 
 
 def test_build_digest_no_work_returns_none(tmp_path):

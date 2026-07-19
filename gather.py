@@ -199,13 +199,30 @@ def session_files(projects_dir: Path, exclude: set[str]) -> list[Path]:
     return files
 
 
+# 要約用 claude -p が残すセッションの目印（build_prompt の冒頭文言）。
+# 開発会話は最初のユーザープロンプトがこの文言では始まらないため誤除外しない。
+SUMMARIZER_PROMPT_PREFIX = "あなたは作業報告書の編集者"
+
+
+def is_summarizer_session(path: Path) -> bool:
+    """最初の実ユーザープロンプトが要約プロンプトで始まるセッション（＝ツール
+    自身の要約呼び出し）なら True。過去に kiroku 配下へ残った要約ノイズを除外する。"""
+    for rec in iter_records([path]):
+        text = user_prompt_text(rec)
+        if text is None:
+            continue
+        return text.startswith(SUMMARIZER_PROMPT_PREFIX)
+    return False
+
+
 def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
                  projects_dir: Path = config.PROJECTS_DIR) -> dict | None:
     """対象期間の作業をダイジェスト化して返す。任意の時間に何度でも呼べる。
     前回記録以降に新しい作業が無ければ None（＝何もしない）を返す。"""
     state = load_state(state_path)
     since, until = compute_window(state, now)
-    files = session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS)
+    files = [f for f in session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS)
+             if not is_summarizer_session(f)]
     digest = bucket_activity(iter_records(files), since, until)
 
     last_ts = None

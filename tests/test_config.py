@@ -9,8 +9,11 @@ def test_paths_under_kiroku_dir():
     assert config.HTML_PATH == config.KIROKU_DIR / "作業報告書.html"
 
 
-def test_kiroku_project_excluded():
-    assert "-Users-munetomoando-claude-work-kiroku" in config.EXCLUDE_PROJECT_DIRS
+def test_kiroku_included_but_summarizer_excluded():
+    # kiroku 本体の開発記録は含める。除外するのは要約用の専用プロジェクトだけ。
+    assert "-Users-munetomoando-claude-work-kiroku" not in config.EXCLUDE_PROJECT_DIRS
+    assert config.SUMMARIZER_PROJECT_DIR in config.EXCLUDE_PROJECT_DIRS
+    assert config.SUMMARIZER_CWD == config.KIROKU_DIR / ".summarizer"
 
 
 def test_parse_ts_returns_aware_datetime():
