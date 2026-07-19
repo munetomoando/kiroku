@@ -4,6 +4,7 @@ __pycache__/
 kiroku.log
 .kiroku.lock/
 .superpowers/
+docs/superpowers/
 *.tmp
 entries.json
 state.json
