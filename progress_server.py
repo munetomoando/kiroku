@@ -108,7 +108,6 @@ body{ display:flex; align-items:center; justify-content:center;
 svg{ width:100%; height:100%; transform:rotate(-90deg); }
 .track{ fill:none; stroke:var(--track); stroke-width:12; }
 .bar{ fill:none; stroke:url(#grad); stroke-width:12; stroke-linecap:round;
-  transition:stroke-dashoffset .45s cubic-bezier(.3,.7,.2,1);
   filter:drop-shadow(0 0 6px color-mix(in srgb,var(--g1) 55%, transparent)); }
 .center{ position:absolute; inset:0; display:flex; flex-direction:column;
   align-items:center; justify-content:center; }
@@ -145,15 +144,38 @@ svg{ width:100%; height:100%; transform:rotate(-90deg); }
 const R=52, C=2*Math.PI*R;
 const bar=document.getElementById('bar'), pct=document.getElementById('pct'), stage=document.getElementById('stage');
 bar.style.strokeDasharray=C; bar.style.strokeDashoffset=C;
-function setFrac(f){ bar.style.strokeDashoffset=C*(1-Math.max(0,Math.min(1,f))); pct.textContent=Math.round(f*100)+'%'; }
+function setFrac(f){ f=Math.max(0,Math.min(1,f)); bar.style.strokeDashoffset=C*(1-f); pct.textContent=Math.round(f*100)+'%'; }
+
+// サーバからの実測値(serverFrac)へ表示(shown)を漸近させる。段階が変わらず長く
+// 停滞しても、経過時間に応じて上限(ceil)がゆっくり上がるので「止まって」見えない。
+let serverFrac=0.03, shown=0.03, done=false, redirected=false;
+let lastBump=performance.now();
+function ceil(){
+  if(done) return 1;
+  const secs=(performance.now()-lastBump)/1000;
+  return Math.min(0.92, serverFrac + 0.15 + secs*0.004);  // 停滞中も微増、上限92%
+}
+function frame(){
+  const c=ceil();
+  shown += (c-shown) * (done ? 0.14 : 0.02);
+  if(done && shown>0.995){ shown=1; setFrac(1);
+    if(!redirected){ redirected=true; stage.textContent='完了'; setTimeout(()=>location.replace('/report'), 400); }
+    return;
+  }
+  setFrac(shown);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
 async function tick(){
   try{
     const r=await fetch('/status',{cache:'no-store'});
     const s=await r.json();
-    setFrac(s.fraction); if(s.stage) stage.textContent=s.stage;
-    if(s.done){ setFrac(1); pct.textContent='100%'; stage.textContent='完了'; setTimeout(()=>location.replace('/report'), 550); return; }
+    if(s.fraction>serverFrac){ serverFrac=s.fraction; lastBump=performance.now(); }
+    if(s.stage) stage.textContent=s.stage;
+    if(s.done && !done){ done=true; requestAnimationFrame(frame); }
   }catch(e){}
-  setTimeout(tick, 300);
+  if(!done) setTimeout(tick, 300);
 }
 tick();
 </script>
