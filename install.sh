@@ -47,10 +47,23 @@ fi
 osacompile -o "$APP_PATH" "$TMP_SCPT"
 
 # プリビルドのアイコンを適用（Pillow 不要）。
+# osacompile は既定アイコン入りの Assets.car と CFBundleIconName を毎回作る。
+# それらが applet.icns より優先されるため、アセットカタログを無効化して
+# applet.icns（CFBundleIconFile）へフォールバックさせる。
 if [ -f "$KIROKU_DIR/icon/kiroku.icns" ]; then
   cp "$KIROKU_DIR/icon/kiroku.icns" "$APP_PATH/Contents/Resources/applet.icns"
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" \
+    "$APP_PATH/Contents/Info.plist" >/dev/null 2>&1 || true
+  if [ -f "$APP_PATH/Contents/Resources/Assets.car" ]; then
+    mv "$APP_PATH/Contents/Resources/Assets.car" \
+       "$APP_PATH/Contents/Resources/Assets.car.disabled"
+  fi
 fi
 codesign --force --deep -s - "$APP_PATH" >/dev/null 2>&1 || true
+# アイコンキャッシュを更新（Dock/Finder に反映）。
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$APP_PATH" >/dev/null 2>&1 || true
+touch "$APP_PATH"; killall Dock >/dev/null 2>&1 || true
 info "生成: $APP_PATH"
 info "Finder でこのアプリを Dock へドラッグすると、クリックで報告書を開けます。"
 
