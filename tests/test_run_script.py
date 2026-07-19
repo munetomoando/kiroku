@@ -2,10 +2,11 @@ import json
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]  # claude-work
-KIROKU = ROOT / "kiroku"
+KIROKU = Path(__file__).resolve().parents[1]  # kiroku リポジトリのルート
+ROOT = KIROKU.parent                          # `import kiroku` 用の親（PYTHONPATH）
 
 
 def _chmod_x(p: Path):
@@ -28,7 +29,7 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT)
     env["KIROKU_CLAUDE_BIN"] = str(KIROKU / "tests" / "fake_claude.sh")
-    env["KIROKU_PYTHON"] = "/Users/munetomoando/claude-work/kiroku/.venv/bin/python"
+    env["KIROKU_PYTHON"] = sys.executable  # テストを実行中の Python（環境非依存）
     # gather/render が参照するパスを環境変数で上書きできるようにしてある前提
     env["KIROKU_PROJECTS_DIR"] = str(projects)
     env["KIROKU_HOME"] = str(tmp_path)  # entries/state/html をここへ
