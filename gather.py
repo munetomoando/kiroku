@@ -153,13 +153,21 @@ def load_state(path: Path) -> dict | None:
 FIRST_RUN_DAYS = 2
 
 
+def _local_midnight(dt: datetime) -> datetime:
+    """dt を含むローカル日の 0:00 を返す。"""
+    return dt.astimezone(config.LOCAL_TZ).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+
+
 def compute_window(state: dict | None, now: datetime) -> tuple[datetime, datetime]:
     if state and state.get("last_recorded_ts"):
-        since = config.parse_ts(state["last_recorded_ts"])
+        # 前回記録時刻を含む「日の 0:00」から再スキャンする。こうすると、
+        # 同じ日に複数回実行しても、その日の項目は毎回「その日全体」で
+        # 作り直されて置換されるため、朝の分が夕方の実行で消えることがない。
+        since = _local_midnight(config.parse_ts(state["last_recorded_ts"]))
     else:
-        local_midnight = (now.astimezone(config.LOCAL_TZ) - timedelta(days=FIRST_RUN_DAYS)) \
-            .replace(hour=0, minute=0, second=0, microsecond=0)
-        since = local_midnight
+        since = _local_midnight(
+            now.astimezone(config.LOCAL_TZ) - timedelta(days=FIRST_RUN_DAYS))
     return since, now
 
 
@@ -167,6 +175,17 @@ def already_recorded_today(state: dict | None, now: datetime) -> bool:
     if not state:
         return False
     return state.get("last_recorded_date") == config.local_date(now)
+
+
+def _max_activity_ts(digest: dict) -> datetime | None:
+    """ダイジェスト内の最も新しい作業時刻（aware datetime）。無ければ None。"""
+    latest: datetime | None = None
+    for day in digest.get("days", []):
+        for pr in day["projects"]:
+            t = config.parse_ts(pr["stats"]["last_ts"])
+            if latest is None or t > latest:
+                latest = t
+    return latest
 
 
 def session_files(projects_dir: Path, exclude: set[str]) -> list[Path]:
@@ -182,12 +201,27 @@ def session_files(projects_dir: Path, exclude: set[str]) -> list[Path]:
 
 def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
                  projects_dir: Path = config.PROJECTS_DIR) -> dict | None:
+    """対象期間の作業をダイジェスト化して返す。任意の時間に何度でも呼べる。
+    前回記録以降に新しい作業が無ければ None（＝何もしない）を返す。"""
     state = load_state(state_path)
-    if already_recorded_today(state, now):
-        return None
     since, until = compute_window(state, now)
     files = session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS)
     digest = bucket_activity(iter_records(files), since, until)
+
+    last_ts = None
+    if state and state.get("last_recorded_ts"):
+        last_ts = config.parse_ts(state["last_recorded_ts"])
+
+    if last_ts is not None:
+        # 前回記録より後の作業が1件も無ければスキップ（同日再実行でも無駄に
+        # 再要約・再表示しない）。
+        latest = _max_activity_ts(digest)
+        if latest is None or latest <= last_ts:
+            return None
+    elif not digest["days"]:
+        # 初回で対象作業が無ければスキップ。
+        return None
+
     digest["until_ts"] = until.astimezone(config.LOCAL_TZ).isoformat()
     return digest
 
