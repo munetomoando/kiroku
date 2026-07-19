@@ -7,6 +7,19 @@ import sys
 from kiroku import config, prompt
 
 
+def _write_stage(text: str) -> None:
+    """進捗テキストを KIROKU_STAGE_FILE へ書き出す（未設定なら何もしない）。
+    ランチャーがこのファイルを読み、進捗ウィンドウに現在の段階を表示する。"""
+    path = os.environ.get("KIROKU_STAGE_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
 def _default_runner(claude_bin: str, prompt_text: str) -> str | None:
     """claude -p を専用 cwd で呼び、stdout を返す。失敗なら None。
     専用 cwd（config.SUMMARIZER_CWD）で実行することで、この要約呼び出し自体が
@@ -30,6 +43,7 @@ def summarize_digest(digest: dict, claude_bin: str, runner=_default_runner) -> d
     days = digest.get("days", [])
     for i, day in enumerate(days):
         date = day.get("date")
+        _write_stage(f"要約を生成しています…（{len(days)}日中 {i + 1}日目）")
         prompt_text = prompt.build_prompt({"days": [day]})
         out = runner(claude_bin, prompt_text)
         if out is None:

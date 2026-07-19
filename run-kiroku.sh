@@ -13,6 +13,10 @@ PY="${KIROKU_PYTHON:-python3}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >>"$LOG"; }
 
+# 進捗テキストを段階ファイルへ（KIROKU_STAGE_FILE 未設定なら何もしない）。
+# ランチャーがこれを読み、進捗ウィンドウに現在の段階を表示する。
+stage() { [ -n "${KIROKU_STAGE_FILE:-}" ] && printf '%s' "$1" >"$KIROKU_STAGE_FILE" 2>/dev/null || true; }
+
 # 多重起動防止（既にロックがあれば終了）
 if ! mkdir "$LOCK" 2>/dev/null; then
   log "既にロック中のため終了"
@@ -23,6 +27,7 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 log "=== 実行開始 ==="
 
 # 1) ダイジェスト取得
+stage "作業を収集しています…"
 DIGEST="$("$PY" -m kiroku.gather)"
 if echo "$DIGEST" | "$PY" -c "import sys,json;d=json.load(sys.stdin);sys.exit(0 if d.get('days') else 1)"; then
   log "ダイジェスト取得（記録あり）"
@@ -32,6 +37,8 @@ else
 fi
 
 # 2) 日ごとに要約（summarize が claude を日単位で呼ぶ。stderr はログへ）
+#    summarize 側が「N日中 i日目」の細かい段階を KIROKU_STAGE_FILE に書き込む。
+stage "要約を生成しています…"
 SUMMARY="$(printf '%s' "$DIGEST" | KIROKU_CLAUDE_BIN="$CLAUDE_BIN" "$PY" -m kiroku.summarize 2>>"$LOG")"
 if [ -z "$SUMMARY" ]; then
   SUMMARY="{}"
@@ -41,6 +48,7 @@ else
 fi
 
 # 3) レンダリング（digest + summary を stdin で渡す）
+stage "報告書を作成しています…"
 printf '{"digest":%s,"summary":%s}' "$DIGEST" "$SUMMARY" | "$PY" -m kiroku.render
 log "レンダリング完了 → 作業報告書.html 更新"
 

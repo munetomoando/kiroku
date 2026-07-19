@@ -3,7 +3,10 @@ import os
 import stat
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from kiroku import config
 
 KIROKU = Path(__file__).resolve().parents[1]  # kiroku リポジトリのルート
 ROOT = KIROKU.parent                          # `import kiroku` 用の親（PYTHONPATH）
@@ -18,8 +21,14 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     projects = tmp_path / "projects"
     sess = projects / "-Users-munetomoando-claude-work-foo"
     sess.mkdir(parents=True)
+    # 初回 2 日窓に確実に入るよう、記録は「2 時間前」の相対時刻にする
+    # （固定日だとカレンダーが進むと窓から外れてしまうため）。
+    rec_dt = datetime.now(timezone.utc) - timedelta(hours=2)
+    ts = rec_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    local = rec_dt.astimezone(config.LOCAL_TZ)
+    expected_ja = f"{local.year}年{local.month}月{local.day}日"
     (sess / "s.jsonl").write_text(
-        json.dumps({"type": "user", "timestamp": "2026-07-17T01:00:00.000Z",
+        json.dumps({"type": "user", "timestamp": ts,
                     "cwd": "/Users/munetomoando/claude-work/foo",
                     "isSidechain": False,
                     "message": {"role": "user", "content": "テスト指示"}}) + "\n",
@@ -46,5 +55,5 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     # 要約が空でも entries.json は追記され HTML は生成される。
     html = (tmp_path / "作業報告書.html").read_text(encoding="utf-8")
     assert "foo" in html          # プロジェクト見出し
-    assert "2026年7月17日" in html  # 対象日
+    assert expected_ja in html    # 対象日（相対時刻から算出）
     assert (tmp_path / "state.json").exists()
