@@ -37,6 +37,21 @@ sleepwatcher（wake）→ `wakeup.sh` → `run-kiroku.sh`：
 
 （メニューバー常駐にしたい場合は SwiftBar / xbar などの別アプリが必要です。）
 
+### アプリのアイコン
+
+Dock で判別しやすいよう、温かい地色＋白の太字「記」のアイコンを付けています。
+作り直す場合:
+
+    cd icon
+    ../.venv/bin/python make_icon.py           # icon_1024.png を生成
+    # kiroku.iconset を作って .icns 化（make_icon.py 冒頭のコメント参照）
+    cp kiroku.icns /Applications/kiroku.app/Contents/Resources/applet.icns
+    # 反映（アイコンキャッシュ更新）
+    codesign --force --deep -s - /Applications/kiroku.app
+    touch /Applications/kiroku.app && killall Dock
+
+反映されない場合は、アプリを一度 Dock から外して入れ直すと確実です。
+
 ## sleepwatcher 設定
 
     brew install sleepwatcher
