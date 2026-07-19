@@ -87,51 +87,74 @@ def _fmt_time(ts: str) -> str:
         return ""
 
 
-def render_html(entries: dict) -> str:
-    entry_list = entries.get("entries", [])
-    anchors = month_anchor_dates(entries)
-    # date -> ym（この日付が月アンカーなら id を振る）
-    anchor_by_date = {d: ym for ym, d in anchors.items()}
-    # 月ナビは降順
-    months_desc = sorted(anchors.keys(), reverse=True)
-
-    nav = "\n".join(
-        f'    <a class="month-btn" href="#m-{ym}">{_fmt_month_ja(ym)}</a>'
-        for ym in months_desc
+def _render_day(e: dict) -> str:
+    """1日分のセクション HTML。"""
+    proj_html = []
+    for pr in e["projects"]:
+        st = pr["stats"]
+        bullets = "\n".join(
+            f"            <li>{escape(str(b))}</li>" for b in pr.get("bullets", [])
+            if b is not None
+        )
+        bullets_block = f"          <ul class=\"topics\">\n{bullets}\n          </ul>" if bullets else ""
+        stat_line = (
+            f"指示 {st['user_turns']}回・応答 {st['assistant_turns']}回"
+            f"／{_fmt_time(st['first_ts'])}〜{_fmt_time(st['last_ts'])}"
+        )
+        proj_html.append(
+            f'        <div class="project">\n'
+            f'          <h3>{escape(pr["project"])}</h3>\n'
+            f'          <p class="summary">{escape(str(pr.get("summary") or ""))}</p>\n'
+            f'{bullets_block}\n'
+            f'          <p class="stats">{escape(stat_line)}</p>\n'
+            f'        </div>'
+        )
+    return (
+        f'      <section class="day">\n'
+        f'        <h2>{_fmt_date_ja(e["date"])}</h2>\n'
+        + "\n".join(proj_html) +
+        f'\n      </section>'
     )
 
-    sections = []
-    for e in entry_list:
-        date = e["date"]
-        anchor_id = f' id="m-{anchor_by_date[date]}"' if date in anchor_by_date else ""
-        proj_html = []
-        for pr in e["projects"]:
-            st = pr["stats"]
-            bullets = "\n".join(
-                f"          <li>{escape(str(b))}</li>" for b in pr.get("bullets", [])
-                if b is not None
-            )
-            bullets_block = f"        <ul class=\"topics\">\n{bullets}\n        </ul>" if bullets else ""
-            stat_line = (
-                f"指示 {st['user_turns']}回・応答 {st['assistant_turns']}回"
-                f"／{_fmt_time(st['first_ts'])}〜{_fmt_time(st['last_ts'])}"
-            )
-            proj_html.append(
-                f'      <div class="project">\n'
-                f'        <h3>{escape(pr["project"])}</h3>\n'
-                f'        <p class="summary">{escape(str(pr.get("summary") or ""))}</p>\n'
-                f'{bullets_block}\n'
-                f'        <p class="stats">{escape(stat_line)}</p>\n'
-                f'      </div>'
-            )
-        sections.append(
-            f'    <section class="day"{anchor_id}>\n'
-            f'      <h2>{_fmt_date_ja(date)}</h2>\n'
-            + "\n".join(proj_html) +
-            f'\n    </section>'
-        )
 
-    body_sections = "\n".join(sections)
+def render_html(entries: dict) -> str:
+    entry_list = entries.get("entries", [])  # すでに日付降順
+    # 月ごとにグループ化（各月内の日は降順）
+    months: dict[str, list[str]] = {}
+    for e in entry_list:
+        months.setdefault(e["date"][:7], []).append(_render_day(e))
+    months_desc = sorted(months.keys(), reverse=True)
+
+    # 年でグループ化したナビ（年→その年の月ボタン、いずれも降順）
+    years: dict[str, list[str]] = {}
+    for ym in months_desc:
+        years.setdefault(ym[:4], []).append(ym)
+    nav_parts = []
+    for y in sorted(years.keys(), reverse=True):
+        btns = "\n".join(
+            f'      <a class="month-btn" href="#m-{ym}">{int(ym[5:7])}月</a>'
+            for ym in years[y]
+        )
+        nav_parts.append(
+            f'    <div class="year-group">\n'
+            f'      <span class="year-label">{int(y)}年</span>\n'
+            f'{btns}\n'
+            f'    </div>'
+        )
+    nav = "\n".join(nav_parts)
+
+    # 本体: 月ごとに <details>。最新の月だけ open（古い月は折りたたみ）。
+    blocks = []
+    for i, ym in enumerate(months_desc):
+        open_attr = " open" if i == 0 else ""
+        days_html = "\n".join(months[ym])
+        blocks.append(
+            f'    <details class="month" id="m-{ym}"{open_attr}>\n'
+            f'      <summary>{_fmt_month_ja(ym)}</summary>\n'
+            f'{days_html}\n'
+            f'    </details>'
+        )
+    body = "\n".join(blocks)
     generated = entry_list[0]["date"] if entry_list else ""
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -147,14 +170,25 @@ body {{ margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",sans-ser
 header {{ padding:2rem 1.5rem 1rem; border-bottom:1px solid var(--line); }}
 header h1 {{ margin:0 0 .3rem; font-size:1.6rem; }}
 header p {{ margin:0; color:var(--sub); font-size:.9rem; }}
-nav.months {{ position:sticky; top:0; background:var(--bg); padding:.8rem 1.5rem;
-  border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:.4rem; z-index:10; }}
+nav.years {{ position:sticky; top:0; background:var(--bg); padding:.6rem 1.5rem;
+  border-bottom:1px solid var(--line); max-height:34vh; overflow-y:auto; z-index:10; }}
+.year-group {{ display:flex; flex-wrap:wrap; gap:.4rem; align-items:center;
+  padding:.25rem 0; }}
+.year-label {{ font-weight:600; font-size:.85rem; color:var(--fg);
+  min-width:3.6em; }}
 .month-btn {{ text-decoration:none; color:var(--accent); border:1px solid var(--line);
-  border-radius:999px; padding:.2rem .8rem; font-size:.85rem; background:#fff; }}
+  border-radius:999px; padding:.15rem .7rem; font-size:.82rem; background:#fff; }}
 .month-btn:hover {{ background:var(--accent); color:#fff; }}
 main {{ max-width:820px; margin:0 auto; padding:1.5rem; }}
-.day {{ padding:1.2rem 0 1.6rem; border-bottom:1px solid var(--line); scroll-margin-top:4rem; }}
-.day > h2 {{ font-size:1.25rem; margin:0 0 .8rem; color:var(--accent); }}
+details.month {{ border-bottom:2px solid var(--line); scroll-margin-top:5rem; }}
+details.month > summary {{ cursor:pointer; list-style:none; font-size:1.2rem;
+  font-weight:600; color:var(--accent); padding:.9rem 0; position:sticky; top:3rem;
+  background:var(--bg); }}
+details.month > summary::-webkit-details-marker {{ display:none; }}
+details.month > summary::before {{ content:"▸ "; font-size:.85em; }}
+details.month[open] > summary::before {{ content:"▾ "; }}
+.day {{ padding:1.1rem 0 1.4rem; border-top:1px solid var(--line); }}
+.day > h2 {{ font-size:1.15rem; margin:0 0 .8rem; }}
 .project {{ margin:0 0 1.1rem; padding-left:.8rem; border-left:3px solid var(--line); }}
 .project h3 {{ margin:0 0 .3rem; font-size:1.02rem; }}
 .summary {{ margin:.2rem 0 .5rem; }}
@@ -167,15 +201,26 @@ footer {{ text-align:center; color:var(--sub); font-size:.8rem; padding:2rem 1re
 <body>
 <header>
   <h1>作業報告書</h1>
-  <p>Claude Code の日々の作業記録。最新の記録が上に積み上がります（最終更新: {generated}）。</p>
+  <p>Claude Code の日々の作業記録。最新の記録が上に積み上がります（最終更新: {generated}）。
+  古い月は折りたたまれています。上のボタンで各月へ移動できます。</p>
 </header>
-<nav class="months">
+<nav class="years">
 {nav}
 </nav>
 <main>
-{body_sections}
+{body}
 </main>
 <footer>著者: {escape(config.AUTHOR)}</footer>
+<script>
+function kirokuOpenTarget() {{
+  var h = location.hash.replace('#', '');
+  if (!h) return;
+  var el = document.getElementById(h);
+  if (el && el.tagName === 'DETAILS') {{ el.open = true; el.scrollIntoView(); }}
+}}
+window.addEventListener('DOMContentLoaded', kirokuOpenTarget);
+window.addEventListener('hashchange', kirokuOpenTarget);
+</script>
 </body>
 </html>
 """

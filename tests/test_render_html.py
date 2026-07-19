@@ -65,3 +65,28 @@ def test_render_html_handles_null_summary_and_bullets():
                    "user_turns": 1, "assistant_turns": 1}}]}]}
     html = render.render_html(entries)
     assert "ok" in html
+
+
+def test_render_html_months_are_collapsible_latest_open():
+    html = render.render_html(ENTRIES)
+    # 各月は details.month。最新月(2026-07)は open、古い月(2026-06)は閉じている。
+    assert 'id="m-2026-07" open>' in html
+    assert 'id="m-2026-06">' in html
+    assert 'id="m-2026-06" open' not in html
+    assert '<summary>2026年7月</summary>' in html
+    assert '<summary>2026年6月</summary>' in html
+
+
+def test_render_html_year_grouped_nav():
+    html = render.render_html(ENTRIES)
+    assert 'year-label">2026年' in html      # 年ラベル
+    assert '>7月</a>' in html                 # 年内は「7月」表記
+    assert '>6月</a>' in html
+    assert 'href="#m-2026-07"' in html
+
+
+def test_render_html_has_open_target_script():
+    html = render.render_html(ENTRIES)
+    # ナビのリンクで折りたたまれた月を自動展開するスクリプト
+    assert 'kirokuOpenTarget' in html
+    assert "el.open = true" in html
