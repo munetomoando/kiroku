@@ -18,7 +18,7 @@ Claude Code での日々の作業を Claude 自身が要約し、単一の累積
 ## インストール
 
 ```bash
-git clone <このリポジトリのURL> kiroku
+git clone https://github.com/munetomoando/kiroku.git
 cd kiroku
 ./install.sh
 ```
@@ -138,3 +138,7 @@ python3 -m venv .venv
 ```
 
 （実行時は標準ライブラリのみで動くため、利用だけなら venv は不要です。）
+
+## ライセンス
+
+MIT License（[LICENSE](LICENSE) を参照）。
