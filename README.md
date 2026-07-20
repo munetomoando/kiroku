@@ -1,8 +1,10 @@
 # kiroku — Claude Code 作業報告書の自動生成（macOS）
 
-Claude Code での日々の作業を Claude 自身が要約し、単一の累積 HTML
-（`作業報告書.html`）へ日ごとに積み上げるツールです。最新の記録が上に積み上がり、
-上部の月ボタンで各月へジャンプできます。地層のように記録が貯まっていきます。
+> 昨日何をやったか、思い出せますか？
+> kiroku は Claude Code での作業を Claude 自身に要約させ、
+> 1 枚の HTML に日ごとに積み上げます。日報も週報も、ここから書けます。
+
+![kiroku の作業報告書](docs/images/hero.png)
 
 - 全プロジェクト横断で「昨日までの作業」をまとめる
 - 同じ日に何度実行しても、その日の作業は 1 項目にまとめ直される
@@ -144,6 +146,24 @@ python3 -m venv .venv
 ```
 
 （実行時は標準ライブラリのみで動くため、利用だけなら venv は不要です。）
+
+## メンテナ向け: OGP 画像の更新
+
+X や Facebook でシェアされた際のカード画像（GitHub の Social preview）は
+REST API / `gh` CLI からは設定できず、画面からの手動アップロードが必要です。
+
+1. リポジトリ → Settings → General → Social preview
+2. `docs/images/ogp.png` をアップロード
+
+画像を撮り直す場合は次を実行してから、上の手順で差し替えます:
+
+    python3 docs/demo/seed_demo.py /tmp/kiroku-demo.html
+
+キャプチャ設定は次のとおりです:
+
+- `docs/images/hero.png` — ビューポート 900×1390、ズームなし
+- `docs/images/ogp.png` — ビューポート 1280×640、ズーム 1.4（サムネイルでも読めるように拡大）
+- ブラウザによっては `file://` を開けないため、`python3 -m http.server` で 127.0.0.1 に配信してから開く
 
 ## メンテナ向け: トラフィック記録（任意）
 
