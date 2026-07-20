@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 
+from kiroku import config
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -59,8 +61,12 @@ def test_renders_html_to_given_path(tmp_path):
     """CLI 相当の write_demo_html が指定パスにだけ書くこと。"""
     mod = _load_seed_demo()
     out = tmp_path / "demo.html"
+    before = {p: p.stat().st_mtime_ns for p in
+              (config.ENTRIES_PATH, config.STATE_PATH, config.HTML_PATH) if p.exists()}
     mod.write_demo_html(out)
     html = out.read_text(encoding="utf-8")
     assert "<title>作業報告書</title>" in html
     assert 'class="month-btn"' in html
     assert list(tmp_path.iterdir()) == [out], "指定パス以外にも書き出している"
+    assert {p: p.stat().st_mtime_ns for p in before} == before, \
+        "実データ（entries.json / state.json / 作業報告書.html）に触れている"
