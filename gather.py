@@ -188,14 +188,26 @@ def _max_activity_ts(digest: dict) -> datetime | None:
     return latest
 
 
-def session_files(projects_dir: Path, exclude: set[str]) -> list[Path]:
+def session_files(projects_dir: Path, exclude: set[str],
+                  since: datetime | None = None) -> list[Path]:
+    """対象の jsonl 一覧。since 指定時は更新日時がそれより古いファイルを
+    開かずにスキップする。jsonl は追記式のため mtime < since なら中の全
+    レコードも since より古く、走査しても対象外になるだけである。"""
     files: list[Path] = []
     if not projects_dir.exists():
         return files
+    cutoff = since.timestamp() if since is not None else None
     for child in projects_dir.iterdir():
         if not child.is_dir() or child.name in exclude:
             continue
-        files.extend(sorted(child.glob("*.jsonl")))
+        for f in sorted(child.glob("*.jsonl")):
+            if cutoff is not None:
+                try:
+                    if f.stat().st_mtime < cutoff:
+                        continue
+                except OSError:
+                    continue
+            files.append(f)
     return files
 
 
@@ -221,7 +233,8 @@ def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
     前回記録以降に新しい作業が無ければ None（＝何もしない）を返す。"""
     state = load_state(state_path)
     since, until = compute_window(state, now)
-    files = [f for f in session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS)
+    files = [f for f in session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS,
+                                      since=since)
              if not is_summarizer_session(f)]
     digest = bucket_activity(iter_records(files), since, until)
 

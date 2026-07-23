@@ -51,6 +51,62 @@ def test_session_files_excludes_given_dirs(tmp_path):
     assert all("summarizer" not in str(f) for f in files)  # 要約用は除外
 
 
+def test_session_files_skips_files_older_than_since(tmp_path):
+    # 更新日時が since より古いファイルは開かずにスキップする（走査の高速化）。
+    # jsonl は追記式なので mtime < since なら中の全レコードも since より古い。
+    import os
+    jst = config.LOCAL_TZ
+    d = tmp_path / "-Users-munetomoando-claude-work-foo"
+    d.mkdir()
+    old_f = d / "old.jsonl"
+    old_f.write_text("{}")
+    new_f = d / "new.jsonl"
+    new_f.write_text("{}")
+    since = datetime(2026, 7, 17, 0, 0, tzinfo=jst)
+    old_ts = datetime(2026, 7, 10, 12, 0, tzinfo=jst).timestamp()
+    os.utime(old_f, (old_ts, old_ts))
+
+    files = gather.session_files(tmp_path, set(), since=since)
+    assert new_f in files
+    assert old_f not in files
+
+
+def test_session_files_without_since_keeps_all(tmp_path):
+    # since 省略時は従来どおり全ファイルを返す。
+    import os
+    d = tmp_path / "-Users-munetomoando-claude-work-foo"
+    d.mkdir()
+    old_f = d / "old.jsonl"
+    old_f.write_text("{}")
+    old_ts = datetime(2026, 7, 10, 12, 0,
+                      tzinfo=config.LOCAL_TZ).timestamp()
+    os.utime(old_f, (old_ts, old_ts))
+    assert old_f in gather.session_files(tmp_path, set())
+
+
+def test_build_digest_ignores_files_with_old_mtime(tmp_path):
+    # build_digest は since より古い mtime のファイルを走査しない。
+    # （ウィンドウ内のレコードを持つが mtime だけ古い人工ファイルで確認）
+    import os
+    jst = config.LOCAL_TZ
+    projects = tmp_path / "projects"
+    sess = projects / "-Users-munetomoando-claude-work-foo"
+    sess.mkdir(parents=True)
+    f = sess / "s.jsonl"
+    _write_user_record(f, datetime(2026, 7, 18, 11, 0, tzinfo=jst), "新しい作業")
+    old_ts = datetime(2026, 7, 1, 0, 0, tzinfo=jst).timestamp()
+    os.utime(f, (old_ts, old_ts))
+
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(
+        {"last_recorded_ts": "2026-07-18T09:00:00+09:00",
+         "last_recorded_date": "2026-07-18"}))
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+    # mtime が since(7/18 0:00) より古い → ファイルごとスキップ → 記録なし
+    assert gather.build_digest(now, state_path=state_path,
+                               projects_dir=projects) is None
+
+
 def test_is_summarizer_session(tmp_path):
     # 最初のユーザープロンプトが要約プロンプトのセッションは True。
     summ = tmp_path / "summ.jsonl"
