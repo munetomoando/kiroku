@@ -57,3 +57,27 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     assert "foo" in html          # プロジェクト見出し
     assert expected_ja in html    # 対象日（相対時刻から算出）
     assert (tmp_path / "state.json").exists()
+
+
+def test_wakeup_via_symlink_resolves_real_script(tmp_path):
+    # sleepwatcher は ~/.wakeup（wakeup.sh へのシンボリックリンク）として実行する。
+    # その場合 $0 はリンク側のパスになるため、dirname "$0" では実体の場所を
+    # 見失う。リンクをたどって本物の run-kiroku.sh を起動できること。
+    link = tmp_path / ".wakeup"
+    link.symlink_to(KIROKU / "wakeup.sh")
+    _chmod_x(KIROKU / "wakeup.sh")
+
+    projects = tmp_path / "projects"
+    projects.mkdir()  # 空 → 記録対象なしで正常終了するはず
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT)
+    env["KIROKU_PYTHON"] = sys.executable
+    env["KIROKU_PROJECTS_DIR"] = str(projects)
+    env["KIROKU_HOME"] = str(tmp_path)
+    env["KIROKU_OPEN"] = "0"
+    env["KIROKU_WAKE_DELAY"] = "0"  # テストでは復帰待ちを省略
+
+    result = subprocess.run([str(link)], env=env, cwd=str(tmp_path),
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
