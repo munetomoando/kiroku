@@ -26,6 +26,22 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 log "=== 実行開始 ==="
 
+# 自動実行（KIROKU_AUTO=1、sleepwatcher 経由）では表示は1日1回まで。
+# その日すでに記録済みなら、この後の更新は行うが完了後の表示だけ抑止する。
+# 判定は state.json が更新される前（ここ）で行う必要がある。
+AUTO_SKIP_OPEN=0
+if [ "${KIROKU_AUTO:-0}" = "1" ]; then
+  if "$PY" -c "
+import datetime, sys
+from kiroku import gather, config
+now = datetime.datetime.now(config.LOCAL_TZ)
+sys.exit(0 if gather.already_recorded_today(
+    gather.load_state(config.STATE_PATH), now) else 1)
+"; then
+    AUTO_SKIP_OPEN=1
+  fi
+fi
+
 # 1) ダイジェスト取得
 stage "作業を収集しています…"
 DIGEST="$("$PY" -m kiroku.gather)"
@@ -56,7 +72,9 @@ log "レンダリング完了 → 作業報告書.html 更新"
 #    ここに到達するのは新しい記録が追記された時だけなので「更新時のみ表示」になる。
 OUT_DIR="${KIROKU_HOME:-$KIROKU_DIR}"
 HTML="$OUT_DIR/作業報告書.html"
-if [ "${KIROKU_OPEN:-1}" = "1" ] && command -v open >/dev/null 2>&1; then
+if [ "$AUTO_SKIP_OPEN" = "1" ]; then
+  log "自動実行・当日表示済み → 更新のみ（表示せず）"
+elif [ "${KIROKU_OPEN:-1}" = "1" ] && command -v open >/dev/null 2>&1; then
   if open "$HTML" 2>>"$LOG"; then
     log "報告書を画面に表示"
   else

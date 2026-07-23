@@ -13,4 +13,6 @@ while [ -L "$SRC" ]; do
   SRC="$(readlink "$SRC")"
   case "$SRC" in /*) ;; *) SRC="$DIR/$SRC" ;; esac
 done
+# 自動実行であることを本体に伝える（表示は1日1回までのガード用）。
+export KIROKU_AUTO=1
 exec "$(cd "$(dirname "$SRC")" && pwd)/run-kiroku.sh"
