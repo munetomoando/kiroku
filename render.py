@@ -7,7 +7,6 @@ from html import escape
 from pathlib import Path
 
 from kiroku import config
-from kiroku import prompt
 
 
 def load_entries(path: Path) -> dict:
@@ -20,44 +19,116 @@ def load_entries(path: Path) -> dict:
     return {"entries": []}
 
 
+def load_state_dict(path: Path) -> dict:
+    """state.json を読む。無い／壊れていれば空 dict。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def atomic_write_json(path: Path, obj) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, path)
 
 
+FALLBACK_SUFFIX = "（自動要約なし）"
+# fallback フラグ導入前に書かれた entries.json のプレースホルダ文言。
+# これらも「守るべき要約」とは見なさない。
+LEGACY_FALLBACK_MARKERS = (FALLBACK_SUFFIX, "（自動要約は生成できませんでした）")
+
+
+def _is_fallback(project_entry: dict) -> bool:
+    if project_entry.get("fallback"):
+        return True
+    text = project_entry.get("summary") or ""
+    return any(m in text for m in LEGACY_FALLBACK_MARKERS)
+
+
+def _fallback_entry(pr: dict) -> dict:
+    """要約が得られなかったとき: digest の prompts を箇条書きにした最小の中身。"""
+    return {
+        "summary": f"{pr['project']} で作業を行いました{FALLBACK_SUFFIX}。",
+        "bullets": [str(p) for p in (pr.get("prompts") or [])]
+                   or ["（記録された指示なし）"],
+        "fallback": True,
+    }
+
+
 def merge_entries(existing: dict, digest: dict, summary: dict) -> dict:
-    """digest の統計と summary を突き合わせて新エントリを作り、日付降順でマージ。"""
+    """digest の統計と summary を突き合わせて新エントリを作り、日付降順でマージ。
+
+    同じ日は毎回作り直される（同日に複数回実行しても朝の分が消えないための仕様）。
+    そのため、要約が一過性の理由で失敗すると、前回までに生成できていた要約まで
+    プレースホルダで上書きされてしまう。ここでは要約が得られなかった場合に限り、
+    既存の（プレースホルダでない）要約を残し、統計だけを新しい値に更新する。"""
     by_date = {e["date"]: e for e in existing.get("entries", [])}
     for day in digest.get("days", []):
         date = day["date"]
+        prev = {p.get("project"): p
+                for p in by_date.get(date, {}).get("projects", [])}
         projects = []
         for pr in day["projects"]:
             proj = pr["project"]
             s = summary.get(date, {}).get(proj)
             if s is None:
-                # モデル応答がこのプロジェクトを丸ごと省略した場合: digest の
-                # prompts から最小限のフォールバックを組み立てる。
-                entry_bullets = [str(p) for p in (pr.get("prompts") or [])] \
-                    or ["（記録された指示なし）"]
-                entry_summary = f"{proj} で作業を行いました（自動要約なし）。"
+                # モデル応答がこのプロジェクトを丸ごと省略した／その日の要約が
+                # 全試行で失敗した場合。
+                old = prev.get(proj)
+                if old is not None and not _is_fallback(old):
+                    entry = {"summary": old.get("summary") or "",
+                             "bullets": [str(b) for b in (old.get("bullets") or [])],
+                             "fallback": False}
+                else:
+                    entry = _fallback_entry(pr)
             else:
-                entry_summary = s.get("summary") or ""
-                entry_bullets = [str(b) for b in (s.get("bullets") or []) if b is not None]
-            projects.append({
-                "project": proj,
-                "summary": entry_summary,
-                "bullets": entry_bullets,
-                "stats": pr["stats"],
-            })
+                entry = {
+                    "summary": s.get("summary") or "",
+                    "bullets": [str(b) for b in (s.get("bullets") or [])
+                                if b is not None],
+                    "fallback": False,
+                }
+            projects.append({"project": proj, **entry, "stats": pr["stats"]})
         by_date[date] = {"date": date, "projects": projects}
     entries = sorted(by_date.values(), key=lambda e: e["date"], reverse=True)
     return {"entries": entries}
 
 
-def update_state(path: Path, until_ts: str, today: str) -> None:
+def failed_dates(digest: dict, merged: dict) -> list[str]:
+    """今回要約し直した日のうち、フォールバックのままだった日。
+    要約を試していない日（needs_summary=False）は対象外。"""
+    by_date = {e["date"]: e for e in merged.get("entries", [])}
+    out = []
+    for day in digest.get("days", []):
+        if not day.get("needs_summary", True):
+            continue
+        entry = by_date.get(day["date"])
+        if entry and any(p.get("fallback") for p in entry["projects"]):
+            out.append(day["date"])
+    return out
+
+
+def next_pending(digest: dict, merged: dict, prev: dict) -> dict[str, int]:
+    """次回に持ち越す再要約待ち。{日付: これまでに試した実行回数}。
+    今回成功した日は消え、失敗した日は回数が1増える。上限に達したら諦める
+    （何度やっても失敗する日を毎回呼び戻して claude を消費しないため）。"""
+    out: dict[str, int] = {}
+    for date in failed_dates(digest, merged):
+        before = prev.get(date)
+        count = (before if isinstance(before, int)
+                 and not isinstance(before, bool) else 0) + 1
+        if count < config.PENDING_MAX_RUNS:
+            out[date] = count
+    return out
+
+
+def update_state(path: Path, until_ts: str, today: str,
+                 pending: dict[str, int] | None = None) -> None:
     atomic_write_json(path, {"last_recorded_ts": until_ts,
-                             "last_recorded_date": today})
+                             "last_recorded_date": today,
+                             "pending_dates": pending or {}})
 
 
 def month_anchor_dates(entries: dict) -> dict:
@@ -228,8 +299,8 @@ window.addEventListener('hashchange', kirokuOpenTarget);
 
 def write_report(digest: dict, summary: dict, *, entries_path: Path,
                  html_path: Path, state_path: Path) -> None:
-    if not summary:
-        summary = prompt.fallback_summary(digest)
+    # summary が空（その日の要約が全滅）でも merge_entries が
+    # プロジェクト単位でフォールバックを組み立て、既存の要約は温存する。
     existing = load_entries(entries_path)
     merged = merge_entries(existing, digest, summary)
     html = render_html(merged)
@@ -239,7 +310,9 @@ def write_report(digest: dict, summary: dict, *, entries_path: Path,
     os.replace(tmp_html, html_path)
     until_ts = digest.get("until_ts", "")
     today = until_ts[:10] if until_ts else ""
-    update_state(state_path, until_ts, today)
+    prev_pending = (load_state_dict(state_path).get("pending_dates") or {})
+    update_state(state_path, until_ts, today,
+                 next_pending(digest, merged, prev_pending))
 
 
 def main() -> int:

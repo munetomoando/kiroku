@@ -96,8 +96,17 @@ kiroku は前回記録より古いログファイルを開かずにスキップ�
 3. `render.py` … `entries.json`（全記録の元データ）に当日分を追記し、そこから
    `作業報告書.html` を毎回まるごと再生成。
 
-`entries.json` が真実の源で、HTML は毎回そこから再生成されます。要約に失敗しても、
-機械抽出した箇条書きで最低限の記録を残します。
+`entries.json` が真実の源で、HTML は毎回そこから再生成されます。
+
+要約は一過性の理由（API の切断、復帰直後の DNS 未確立、モデルが JSON を返さない等）で
+失敗することがあります。そのための備えが 3 つあります:
+
+1. **再試行** … 1 日分につき既定 3 回まで、間を空けて要約し直します。
+2. **既存要約の温存** … 失敗しても、前回までに生成できていた要約は上書きしません。
+   フォールバックの箇条書き（機械抽出した指示一覧）で最低限の記録は残ります。
+3. **後日の再要約** … 全試行が失敗した日は `state.json` の `pending_dates` に
+   記録され、次回以降の実行で対象期間に呼び戻されます。回復すれば消え、
+   3 回の実行で回復しない／14 日を過ぎた日は諦めます。
 
 ## sleepwatcher を後から設定する
 
@@ -131,11 +140,11 @@ codesign --force --deep -s - /Applications/kiroku.app
 |---|---|
 | `作業報告書.html` | 成果物（累積・単一ファイル。git 管理外） |
 | `entries.json` | 全記録の元データ（真実の源。git 管理外） |
-| `state.json` | 前回記録タイムスタンプ・最終記録日（git 管理外） |
+| `state.json` | 前回記録タイムスタンプ・最終記録日・再要約待ちの日（git 管理外） |
 | `config.py` | パス・定数・時刻ユーティリティ |
-| `gather.py` | jsonl 抽出（決定的） |
-| `prompt.py` | 要約プロンプト生成・応答パース・フォールバック |
-| `render.py` | entries.json 追記＋HTML 再生成（決定的） |
+| `gather.py` | jsonl 抽出・対象期間の決定（決定的） |
+| `prompt.py` | 要約プロンプト生成・応答パース |
+| `render.py` | entries.json 追記＋HTML 再生成・再要約待ちの記録（決定的） |
 | `run-kiroku.sh` | オーケストレーション（ロック・ログ付き） |
 | `progress_server.py` | 実行中の円形リング進捗画面（127.0.0.1 限定の一時サーバ） |
 | `wakeup.sh` | sleepwatcher 用ラッパ |
@@ -165,7 +174,11 @@ rm -rf /Applications/kiroku.app
 ## トラブルシュート
 
 - 生成されない: `tail -n 30 kiroku.log` を確認。
-- 要約が空: `claude -p` が単体で動くか（認証）を確認。失敗時も箇条書きで記録は残ります。
+- 要約が「（自動要約なし）」になる: `kiroku.log` に失敗理由が残ります。
+  - `claude を起動できません: ...` → claude の実体が見つかっていません。`command -v claude` で場所を確認し、既定の探索先（`~/.local/bin` / `~/.claude/local` / `/opt/homebrew/bin` / `/usr/local/bin`）に無ければ `KIROKU_CLAUDE_BIN` に絶対パスを設定してください。
+  - `claude 異常終了 code=... stdout='API Error: ...'` → 一過性の API・ネットワークエラーです。既定で 3 回まで自動的に試し直します（`KIROKU_SUMMARY_ATTEMPTS` / `KIROKU_SUMMARY_WAIT_SEC` で調整可）。
+  - いずれの場合も、その日の指示は箇条書きで残ります。また、いったん生成できた要約は、後の実行が失敗しても上書きされません。
+- 要約が空: `claude -p` が単体で動くか（認証）を確認。
 - アイコンが Dock に反映されない: 一度 Dock から外して入れ直すと確実です。
 
 ## 開発

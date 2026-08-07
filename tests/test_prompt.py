@@ -29,10 +29,3 @@ def test_parse_summary_from_bare_json():
 
 def test_parse_summary_bad_returns_empty():
     assert prompt.parse_summary("これはJSONではありません") == {}
-
-
-def test_fallback_summary_uses_prompts_as_bullets():
-    fb = prompt.fallback_summary(DIGEST)
-    entry = fb["2026-07-17"]["companion"]
-    assert entry["bullets"] == ["ログイン画面を作って", "色を直して"]
-    assert entry["summary"] != ""

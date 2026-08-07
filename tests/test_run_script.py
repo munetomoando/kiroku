@@ -50,12 +50,12 @@ def test_run_script_end_to_end(tmp_path, monkeypatch):
     subprocess.run(["bash", str(KIROKU / "run-kiroku.sh")],
                    env=env, check=True, cwd=str(tmp_path))
 
-    # HTML が生成され、プロジェクト見出しと日付が入っていること（構造の確認）。
-    # fake_claude の要約キーは実日付/実プロジェクトと一致しないため要約文は空でよい。
-    # 要約が空でも entries.json は追記され HTML は生成される。
+    # HTML が生成され、見出し・日付に加えて要約本文まで反映されていること。
     html = (tmp_path / "作業報告書.html").read_text(encoding="utf-8")
     assert "foo" in html          # プロジェクト見出し
     assert expected_ja in html    # 対象日（相対時刻から算出）
+    assert "テスト要約" in html   # 要約が entries.json 経由で HTML に載る
+    assert "自動要約なし" not in html  # フォールバックに落ちていない
     assert (tmp_path / "state.json").exists()
 
 
@@ -151,3 +151,69 @@ def test_auto_run_first_time_today_opens_report(tmp_path):
 
     assert (tmp_path / "作業報告書.html").exists()
     assert open_log.exists()                         # 表示される
+
+
+def test_run_script_finds_claude_outside_minimal_path(tmp_path):
+    # sleepwatcher / Dock 起動では PATH が最小限（/opt/homebrew/bin 等）になる。
+    # claude をネイティブ版インストーラで入れると ~/.local/bin へ移るため、
+    # PATH 頼みだと自動実行が全部失敗する（2026-08-07 に実際に発生）。
+    # KIROKU_CLAUDE_BIN 未設定・PATH に claude なしでも見つけられること。
+    now = datetime.now(timezone.utc)
+    projects = _seed_projects(tmp_path, now - timedelta(hours=1))
+
+    home = tmp_path / "home"
+    localbin = home / ".local" / "bin"
+    localbin.mkdir(parents=True)
+    called = tmp_path / "claude_called.log"
+    fake = localbin / "claude"
+    fake.write_text(f'#!/usr/bin/env bash\necho called >> "{called}"\n'
+                    f'exec "{KIROKU / "tests" / "fake_claude.sh"}" "$@"\n',
+                    encoding="utf-8")
+    _chmod_x(fake)
+    _chmod_x(KIROKU / "tests" / "fake_claude.sh")
+
+    env = {
+        "PATH": "/usr/bin:/bin",          # claude を含まない最小 PATH
+        "HOME": str(home),
+        "PYTHONPATH": str(ROOT),
+        "KIROKU_PYTHON": sys.executable,
+        "KIROKU_PROJECTS_DIR": str(projects),
+        "KIROKU_HOME": str(tmp_path),
+        "KIROKU_OPEN": "0",
+    }
+    result = subprocess.run(["bash", str(KIROKU / "run-kiroku.sh")],
+                            env=env, cwd=str(tmp_path),
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert called.exists(), (tmp_path / "kiroku.log").read_text(encoding="utf-8")
+
+
+def test_wakeup_path_includes_user_local_bin():
+    # wakeup.sh は PATH を明示的に組み立てる。ネイティブ版 claude の既定の
+    # 置き場所（~/.local/bin）が抜けていると自動実行だけが静かに失敗する。
+    text = (KIROKU / "wakeup.sh").read_text(encoding="utf-8")
+    assert "$HOME/.local/bin" in text
+
+
+def test_run_script_writes_log_under_kiroku_home(tmp_path):
+    # ログ出力先が KIROKU_HOME を無視していると、テスト実行が本番の
+    # kiroku.log に混ざり、障害調査で実行履歴が読めなくなる。
+    projects = tmp_path / "projects"
+    projects.mkdir()  # 空 → 記録対象なしで正常終了
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT)
+    env["KIROKU_PYTHON"] = sys.executable
+    env["KIROKU_PROJECTS_DIR"] = str(projects)
+    env["KIROKU_HOME"] = str(tmp_path)
+    env["KIROKU_OPEN"] = "0"
+
+    before = (KIROKU / "kiroku.log").read_text(encoding="utf-8") \
+        if (KIROKU / "kiroku.log").exists() else ""
+    subprocess.run(["bash", str(KIROKU / "run-kiroku.sh")],
+                   env=env, check=True, cwd=str(tmp_path))
+    after = (KIROKU / "kiroku.log").read_text(encoding="utf-8") \
+        if (KIROKU / "kiroku.log").exists() else ""
+
+    assert (tmp_path / "kiroku.log").exists()
+    assert after == before  # 本番のログには一切書かない

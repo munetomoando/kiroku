@@ -159,6 +159,33 @@ def _local_midnight(dt: datetime) -> datetime:
         hour=0, minute=0, second=0, microsecond=0)
 
 
+def _date_start(date: str) -> datetime:
+    """"YYYY-MM-DD" のローカル 0:00 を返す。"""
+    y, m, d = (int(x) for x in date.split("-"))
+    return datetime(y, m, d, tzinfo=config.LOCAL_TZ)
+
+
+def pending_dates(state: dict | None, now: datetime) -> dict[str, int]:
+    """再要約待ちの日付 → これまでに再要約を試した実行回数。
+    打ち切り条件（回数・経過日数）に達したものと、壊れた値は除いて返す。"""
+    raw = (state or {}).get("pending_dates")
+    if not isinstance(raw, dict):
+        return {}
+    oldest = config.local_date(
+        now.astimezone(config.LOCAL_TZ)
+        - timedelta(days=config.PENDING_MAX_AGE_DAYS))
+    out: dict[str, int] = {}
+    for date, count in raw.items():
+        if not isinstance(date, str) or not isinstance(count, int):
+            continue
+        if isinstance(count, bool):  # bool は int のサブクラスなので明示的に除く
+            continue
+        if date < oldest or count >= config.PENDING_MAX_RUNS:
+            continue
+        out[date] = count
+    return out
+
+
 def compute_window(state: dict | None, now: datetime) -> tuple[datetime, datetime]:
     if state and state.get("last_recorded_ts"):
         # 前回記録時刻を含む「日の 0:00」から再スキャンする。こうすると、
@@ -233,10 +260,24 @@ def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
     前回記録以降に新しい作業が無ければ None（＝何もしない）を返す。"""
     state = load_state(state_path)
     since, until = compute_window(state, now)
+    window_date = config.local_date(since)  # 通常窓の開始日（この日以降は要約対象）
+
+    # 要約に失敗した日は、通常窓より前でも対象期間に呼び戻す。これが無いと
+    # 日付が変わった時点でその日は二度と要約されない。
+    pending = pending_dates(state, now)
+    if pending:
+        since = min(since, _date_start(min(pending)))
+
     files = [f for f in session_files(projects_dir, config.EXCLUDE_PROJECT_DIRS,
                                       since=since)
              if not is_summarizer_session(f)]
     digest = bucket_activity(iter_records(files), since, until)
+
+    # 呼び戻しで期間が伸びても、要約し直すのは「通常窓の日」と「失敗した日」
+    # だけにする（間の日はすでに要約できているので claude を呼ばない）。
+    for day in digest["days"]:
+        day["needs_summary"] = (day["date"] >= window_date
+                                or day["date"] in pending)
 
     last_ts = None
     if state and state.get("last_recorded_ts"):
@@ -244,9 +285,11 @@ def build_digest(now: datetime, state_path: Path = config.STATE_PATH,
 
     if last_ts is not None:
         # 前回記録より後の作業が1件も無ければスキップ（同日再実行でも無駄に
-        # 再要約・再表示しない）。
+        # 再要約・再表示しない）。ただし再要約待ちの日が残っていれば実行する。
         latest = _max_activity_ts(digest)
-        if latest is None or latest <= last_ts:
+        has_new = latest is not None and latest > last_ts
+        has_pending = any(d["date"] in pending for d in digest["days"])
+        if not has_new and not has_pending:
             return None
     elif not digest["days"]:
         # 初回で対象作業が無ければスキップ。

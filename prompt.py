@@ -1,4 +1,4 @@
-"""claude -p 用プロンプト生成と応答パース、フォールバック要約。"""
+"""claude -p 用プロンプト生成と応答パース。"""
 import json
 import re
 
@@ -55,17 +55,3 @@ def parse_summary(text: str) -> dict:
         except json.JSONDecodeError:
             continue
     return {}
-
-
-def fallback_summary(digest: dict) -> dict:
-    """要約失敗時: prompts を箇条書きにした最小要約を組み立てる。"""
-    out: dict = {}
-    for day in digest.get("days", []):
-        day_map = out.setdefault(day["date"], {})
-        for pr in day["projects"]:
-            bullets = list(pr["prompts"]) or ["（記録された指示なし）"]
-            day_map[pr["project"]] = {
-                "summary": f"{pr['project']} で作業を行いました（自動要約は生成できませんでした）。",
-                "bullets": bullets,
-            }
-    return out

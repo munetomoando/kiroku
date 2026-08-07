@@ -38,6 +38,13 @@ LOG_PATH = KIROKU_OUT_DIR / "kiroku.log"
 # システムのローカルタイムゾーン（JST 前提）
 LOCAL_TZ = datetime.now().astimezone().tzinfo
 
+# 要約に失敗した日は state.json の pending_dates に「その日を再要約しようとした
+# 実行回数」として記録し、次回以降の実行で対象期間に呼び戻す。
+# 何度やっても失敗する日を毎回呼び戻すと claude 呼び出しが無駄に増えるため、
+# 回数と経過日数の両方で打ち切る。
+PENDING_MAX_RUNS = 3
+PENDING_MAX_AGE_DAYS = 14
+
 
 def parse_ts(s: str) -> datetime:
     """jsonl の ISO タイムスタンプ（末尾 Z 含む）を aware datetime に変換。"""

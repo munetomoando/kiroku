@@ -6,12 +6,33 @@ KIROKU_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$KIROKU_DIR")"
 export PYTHONPATH="$PARENT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-LOG="$KIROKU_DIR/kiroku.log"
+# ログは entries/state/html と同じ場所（config.LOG_PATH と一致させる）。
+# ここだけ KIROKU_HOME を無視していたため、テスト実行が本番のログに混ざり、
+# 障害調査のときに実行履歴が読みにくくなっていた。
+LOG="${KIROKU_HOME:-$KIROKU_DIR}/kiroku.log"
 LOCK="$KIROKU_DIR/.kiroku.lock"
-CLAUDE_BIN="${KIROKU_CLAUDE_BIN:-claude}"
 PY="${KIROKU_PYTHON:-python3}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >>"$LOG"; }
+
+# claude の実体を解決する。sleepwatcher やアプリからの起動では PATH が
+# 最小限になるため、PATH だけに頼るとインストール先が変わった時点で自動実行が
+# 静かに全滅する（ネイティブ版インストーラで ~/.local/bin へ移った際に発生）。
+# 既知の配置先も順に探し、見つからなければログに理由を残す。
+resolve_claude() {
+  if [ -n "${KIROKU_CLAUDE_BIN:-}" ]; then
+    printf '%s' "$KIROKU_CLAUDE_BIN"; return 0
+  fi
+  local c
+  if c="$(command -v claude 2>/dev/null)" && [ -n "$c" ]; then
+    printf '%s' "$c"; return 0
+  fi
+  for c in "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" \
+           "/opt/homebrew/bin/claude" "/usr/local/bin/claude"; do
+    if [ -x "$c" ]; then printf '%s' "$c"; return 0; fi
+  done
+  return 1
+}
 
 # 進捗テキストを段階ファイルへ（KIROKU_STAGE_FILE 未設定なら何もしない）。
 # ランチャーがこれを読み、進捗ウィンドウに現在の段階を表示する。
@@ -25,6 +46,13 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 log "=== 実行開始 ==="
+
+if CLAUDE_BIN="$(resolve_claude)"; then
+  :
+else
+  CLAUDE_BIN="claude"
+  log "警告: claude が見つかりません（PATH=$PATH）。要約はフォールバックになります"
+fi
 
 # 自動実行（KIROKU_AUTO=1、sleepwatcher 経由）では表示は1日1回まで。
 # その日すでに記録済みなら、この後の更新は行うが完了後の表示だけ抑止する。

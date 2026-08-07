@@ -233,3 +233,118 @@ def test_build_digest_happy_path_returns_digest(tmp_path):
     assert digest is not None
     assert "until_ts" in digest
     assert any(d["projects"] for d in digest["days"])
+
+
+# --- 要約に失敗した日の再要約 ---------------------------------------------
+# 要約が全試行で失敗した日は state.json の pending_dates に記録され、
+# 次回以降の実行で対象期間に呼び戻される。これが無いと、日付が変わった
+# 時点でその日は二度と要約されない（2026-08-06 の profile がこれ）。
+
+def _pending_state(tmp_path, pending, last_ts="2026-07-18T09:00:00+09:00"):
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(
+        {"last_recorded_ts": last_ts, "last_recorded_date": "2026-07-18",
+         "pending_dates": pending}))
+    return state_path
+
+
+def _projects_with(tmp_path, records):
+    projects = tmp_path / "projects"
+    sess = projects / "-Users-munetomoando-claude-work-foo"
+    sess.mkdir(parents=True)
+    f = sess / "s.jsonl"
+    for dt, text in records:
+        _write_user_record(f, dt, text)
+    return projects
+
+
+def test_build_digest_pulls_pending_date_back_into_window(tmp_path):
+    jst = config.LOCAL_TZ
+    projects = _projects_with(tmp_path, [
+        (datetime(2026, 7, 15, 10, 0, tzinfo=jst), "要約に失敗した日の作業"),
+        (datetime(2026, 7, 18, 11, 0, tzinfo=jst), "新しい作業"),
+    ])
+    state_path = _pending_state(tmp_path, {"2026-07-15": 1})
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+
+    by_date = {d["date"]: d for d in digest["days"]}
+    assert set(by_date) == {"2026-07-15", "2026-07-18"}
+    assert by_date["2026-07-15"]["needs_summary"] is True
+    assert by_date["2026-07-18"]["needs_summary"] is True
+
+
+def test_build_digest_does_not_resummarize_days_in_between(tmp_path):
+    # pending を呼び戻すために期間は伸びるが、その間の「すでに要約できている日」
+    # まで要約し直すと claude 呼び出しが無駄に増える。
+    jst = config.LOCAL_TZ
+    projects = _projects_with(tmp_path, [
+        (datetime(2026, 7, 15, 10, 0, tzinfo=jst), "失敗した日"),
+        (datetime(2026, 7, 16, 10, 0, tzinfo=jst), "要約できている日"),
+        (datetime(2026, 7, 18, 11, 0, tzinfo=jst), "新しい作業"),
+    ])
+    state_path = _pending_state(tmp_path, {"2026-07-15": 1})
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+
+    by_date = {d["date"]: d for d in digest["days"]}
+    assert by_date["2026-07-16"]["needs_summary"] is False
+
+
+def test_build_digest_runs_for_pending_even_without_new_work(tmp_path):
+    # 新しい作業が無くても、再要約待ちがあれば実行する。
+    jst = config.LOCAL_TZ
+    projects = _projects_with(tmp_path, [
+        (datetime(2026, 7, 15, 10, 0, tzinfo=jst), "失敗した日"),
+        (datetime(2026, 7, 18, 9, 0, tzinfo=jst), "記録済みの作業"),
+    ])
+    state_path = _pending_state(tmp_path, {"2026-07-15": 1},
+                                last_ts="2026-07-18T12:00:00+09:00")
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+
+    assert digest is not None
+    assert "2026-07-15" in [d["date"] for d in digest["days"]]
+
+
+def test_build_digest_drops_pending_date_that_is_too_old(tmp_path):
+    # 古すぎる pending は諦める（セッションログ自体が消えている可能性が高く、
+    # 毎回呼び戻すと走査と claude 呼び出しが無駄に増える）。
+    jst = config.LOCAL_TZ
+    old = datetime(2026, 7, 18, tzinfo=jst) - timedelta(
+        days=config.PENDING_MAX_AGE_DAYS + 1)
+    projects = _projects_with(tmp_path, [
+        (old.replace(hour=10), "古すぎる失敗日"),
+        (datetime(2026, 7, 18, 11, 0, tzinfo=jst), "新しい作業"),
+    ])
+    state_path = _pending_state(tmp_path, {config.local_date(old): 1})
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+
+    assert [d["date"] for d in digest["days"]] == ["2026-07-18"]
+
+
+def test_build_digest_drops_pending_date_after_max_runs(tmp_path):
+    jst = config.LOCAL_TZ
+    projects = _projects_with(tmp_path, [
+        (datetime(2026, 7, 15, 10, 0, tzinfo=jst), "何度やっても失敗する日"),
+        (datetime(2026, 7, 18, 11, 0, tzinfo=jst), "新しい作業"),
+    ])
+    state_path = _pending_state(tmp_path,
+                                {"2026-07-15": config.PENDING_MAX_RUNS})
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=jst)
+
+    digest = gather.build_digest(now, state_path=state_path, projects_dir=projects)
+
+    assert [d["date"] for d in digest["days"]] == ["2026-07-18"]
+
+
+def test_pending_dates_tolerates_broken_state(tmp_path):
+    now = datetime(2026, 7, 18, 18, 0, tzinfo=config.LOCAL_TZ)
+    assert gather.pending_dates(None, now) == {}
+    assert gather.pending_dates({"pending_dates": ["2026-07-15"]}, now) == {}
+    assert gather.pending_dates({"pending_dates": {"x": "y"}}, now) == {}

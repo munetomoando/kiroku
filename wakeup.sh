@@ -2,7 +2,7 @@
 # sleepwatcher の wakeup フックから呼ばれる薄いラッパ。
 # 復帰直後はネットワーク・ログインシェル環境が未整備なことがあるため
 # PATH を明示し、少し待ってから本体を起動する。
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 sleep "${KIROKU_WAKE_DELAY:-20}"
 # sleepwatcher はこのスクリプトを ~/.wakeup（シンボリックリンク）として
 # 実行するため、$0 はリンク側のパスになる。dirname "$0" では実体の場所を

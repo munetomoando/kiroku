@@ -84,3 +84,58 @@ def test_update_state_writes_date_and_ts(tmp_path):
     data = json.loads(p.read_text())
     assert data["last_recorded_ts"] == "2026-07-18T10:00:00+09:00"
     assert data["last_recorded_date"] == "2026-07-18"
+
+
+# --- 一過性の要約失敗が、すでに生成できていた要約を壊さないこと ------------
+# 実例: 2026-08-03 は 22:35 の実行で要約に成功していたが、翌 8/4 17:18 の
+# 再実行（同日再スキャン仕様）が API エラーで失敗し、成功済みの要約が
+# プレースホルダ文言に上書きされて消えた。
+
+def test_merge_keeps_existing_summary_when_new_summary_is_missing():
+    existing = {"entries": [{"date": "2026-07-17", "projects": [
+        {"project": "foo", "summary": "きちんとした要約", "bullets": ["A", "B"],
+         "stats": {"first_ts": "2026-07-17T09:00:00+09:00",
+                   "last_ts": "2026-07-17T12:00:00+09:00",
+                   "user_turns": 1, "assistant_turns": 1}}]}]}
+
+    out = render.merge_entries(existing, FOO_DIGEST, {})  # 要約が丸ごと失敗
+
+    pr = out["entries"][0]["projects"][0]
+    assert pr["summary"] == "きちんとした要約"
+    assert pr["bullets"] == ["A", "B"]
+    # 統計だけは新しいダイジェストの値で更新される
+    assert pr["stats"]["assistant_turns"] == 2
+
+
+def test_merge_replaces_previous_placeholder_with_real_summary():
+    existing = {"entries": [{"date": "2026-07-17", "projects": [
+        {"project": "foo", "summary": "foo で作業を行いました（自動要約なし）。",
+         "bullets": ["やったこと1"], "fallback": True,
+         "stats": {"first_ts": "2026-07-17T09:00:00+09:00",
+                   "last_ts": "2026-07-17T12:00:00+09:00",
+                   "user_turns": 1, "assistant_turns": 1}}]}]}
+    summary = {"2026-07-17": {"foo": {"summary": "本物", "bullets": ["X"]}}}
+
+    out = render.merge_entries(existing, FOO_DIGEST, summary)
+
+    pr = out["entries"][0]["projects"][0]
+    assert pr["summary"] == "本物"
+    assert pr["fallback"] is False
+
+
+def test_merge_replaces_legacy_placeholder_without_flag():
+    # fallback フラグ導入前に書かれた entries.json のプレースホルダも、
+    # 文言から判定して「守るべき要約」とは見なさない。
+    existing = {"entries": [{"date": "2026-07-17", "projects": [
+        {"project": "foo",
+         "summary": "foo で作業を行いました（自動要約は生成できませんでした）。",
+         "bullets": ["やったこと1"],
+         "stats": {"first_ts": "2026-07-17T09:00:00+09:00",
+                   "last_ts": "2026-07-17T12:00:00+09:00",
+                   "user_turns": 1, "assistant_turns": 1}}]}]}
+
+    out = render.merge_entries(existing, FOO_DIGEST, {})
+
+    pr = out["entries"][0]["projects"][0]
+    assert pr["fallback"] is True
+    assert pr["bullets"] == ["やったこと1", "やったこと2"]  # 最新の指示で作り直す

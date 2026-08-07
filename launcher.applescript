@@ -10,7 +10,9 @@ on run
 	set runScript to kirokuDir & "/run-kiroku.sh"
 	set reportPath to kirokuDir & "/作業報告書.html"
 	set serverPy to kirokuDir & "/progress_server.py"
-	set envPrefix to "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin; "
+	-- ネイティブ版 claude は ~/.local/bin に入る。$HOME は do shell script の
+	-- シェルが展開する（アプリ起動時の PATH は最小限なので明示が必要）。
+	set envPrefix to "export PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin; "
 	set urlFile to (do shell script "mktemp /tmp/kiroku_url.XXXXXX")
 	try
 		-- 進捗サーバをバックグラウンド起動（URL を urlFile に書き出す）。

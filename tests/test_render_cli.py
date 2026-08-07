@@ -1,5 +1,5 @@
 import json
-from kiroku import render
+from kiroku import config, render
 
 DIGEST = {"until_ts": "2026-07-18T10:00:00+09:00", "days": [
     {"date": "2026-07-17", "projects": [
@@ -53,3 +53,49 @@ def test_write_report_recovers_from_null_summary_on_next_day(tmp_path):
     assert "2026年7月18日" in html
     dates = [e["date"] for e in json.loads(ep.read_text())["entries"]]
     assert dates == ["2026-07-18", "2026-07-17"]
+
+
+# --- 失敗した日を state.json に覚えて再要約させる --------------------------
+
+def _state(sp):
+    return json.loads(sp.read_text(encoding="utf-8"))
+
+
+def test_write_report_records_failed_date_as_pending(tmp_path):
+    ep, hp, sp = tmp_path / "e.json", tmp_path / "r.html", tmp_path / "s.json"
+    render.write_report(DIGEST, {}, entries_path=ep, html_path=hp, state_path=sp)
+    assert _state(sp)["pending_dates"] == {"2026-07-17": 1}
+
+
+def test_write_report_counts_repeated_failures(tmp_path):
+    ep, hp, sp = tmp_path / "e.json", tmp_path / "r.html", tmp_path / "s.json"
+    sp.write_text(json.dumps({"pending_dates": {"2026-07-17": 1}}))
+    render.write_report(DIGEST, {}, entries_path=ep, html_path=hp, state_path=sp)
+    assert _state(sp)["pending_dates"] == {"2026-07-17": 2}
+
+
+def test_write_report_clears_pending_when_summary_succeeds(tmp_path):
+    ep, hp, sp = tmp_path / "e.json", tmp_path / "r.html", tmp_path / "s.json"
+    sp.write_text(json.dumps({"pending_dates": {"2026-07-17": 1}}))
+    summary = {"2026-07-17": {"companion": {"summary": "S", "bullets": ["B"]}}}
+    render.write_report(DIGEST, summary, entries_path=ep, html_path=hp, state_path=sp)
+    assert _state(sp)["pending_dates"] == {}
+
+
+def test_write_report_gives_up_after_max_runs(tmp_path):
+    # 何度やっても失敗する日を永久に呼び戻し続けない。
+    ep, hp, sp = tmp_path / "e.json", tmp_path / "r.html", tmp_path / "s.json"
+    sp.write_text(json.dumps(
+        {"pending_dates": {"2026-07-17": config.PENDING_MAX_RUNS - 1}}))
+    render.write_report(DIGEST, {}, entries_path=ep, html_path=hp, state_path=sp)
+    assert _state(sp)["pending_dates"] == {}
+
+
+def test_write_report_does_not_pend_days_it_did_not_summarize(tmp_path):
+    # needs_summary=False の日は claude を呼んでいないので、フォールバックの
+    # ままでも「今回失敗した日」とは数えない。
+    ep, hp, sp = tmp_path / "e.json", tmp_path / "r.html", tmp_path / "s.json"
+    digest = json.loads(json.dumps(DIGEST))
+    digest["days"][0]["needs_summary"] = False
+    render.write_report(digest, {}, entries_path=ep, html_path=hp, state_path=sp)
+    assert _state(sp)["pending_dates"] == {}
